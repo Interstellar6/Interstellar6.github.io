@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420">
+  <rect width="800" height="420" fill="#f5f7f4"/>
+  <path d="M70 314 C190 160 270 248 360 122 C440 14 560 120 722 56 L722 420 L70 420 Z" fill="#d7ebe6"/>
+  <path d="M98 286 L252 210 L358 250 L516 142 L704 208" fill="none" stroke="#0d6b65" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="252" cy="210" r="18" fill="#ffb84d"/>
+  <circle cx="516" cy="142" r="18" fill="#ffb84d"/>
+  <g fill="#203230" font-family="Arial, sans-serif">
+    <text x="86" y="86" font-size="42" font-weight="700">Video2Mesh</text>
+    <text x="88" y="128" font-size="24">Field Notes</text>
+  </g>
+</svg>
