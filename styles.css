@@ -179,7 +179,7 @@ a { color: inherit; }
   font-size: 13px;
 }
 
-.home-view, .article-view { max-width: 1360px; margin: 0 auto; }
+.home-view, .article-view, .admin-view { max-width: 1360px; margin: 0 auto; }
 .feature-row {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(280px, .8fr);
@@ -233,7 +233,7 @@ a { color: inherit; }
 .view-actions { display: flex; gap: 8px; }
 
 .control-panel {
-  margin: 18px 0;
+  margin: 0 0 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--paper);

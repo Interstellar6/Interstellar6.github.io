@@ -14,6 +14,7 @@
   let sortMode = "recent";
   let currentDocId = "";
   let pendingEditorDocId = "";
+  let adminPanelInitialized = false;
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -24,12 +25,14 @@
     clearSearch: $("clearSearch"),
     buildMeta: $("buildMeta"),
     homeView: $("homeView"),
+    adminView: $("adminView"),
     articleView: $("articleView"),
     articleBody: $("articleBody"),
     articleMeta: $("articleMeta"),
     tocNav: $("tocNav"),
     relatedDocs: $("relatedDocs"),
     backHome: $("backHome"),
+    backFromAdmin: $("backFromAdmin"),
     uploadInput: $("uploadInput"),
     uploadList: $("uploadList"),
     sortRecent: $("sortRecent"),
@@ -545,8 +548,18 @@
     currentDocId = "";
     closeEditor();
     els.homeView.hidden = false;
+    els.adminView.hidden = true;
     els.articleView.hidden = true;
     renderDocGrid();
+  }
+
+  function showAdmin() {
+    currentDocId = "";
+    closeEditor();
+    els.homeView.hidden = true;
+    els.adminView.hidden = false;
+    els.articleView.hidden = true;
+    if (!adminPanelInitialized) initApiPanel();
   }
 
   function showDoc(id, options = {}) {
@@ -554,6 +567,7 @@
     if (!doc) return showHome();
     currentDocId = doc.id;
     els.homeView.hidden = true;
+    els.adminView.hidden = true;
     els.articleView.hidden = false;
     if (!options.keepEditor) closeEditor();
     els.articleMeta.innerHTML = `
@@ -599,7 +613,8 @@
 
   function route() {
     const match = location.hash.match(/^#\/doc\/(.+)$/);
-    if (match) showDoc(decodeURIComponent(match[1]));
+    if (location.hash === "#/admin") showAdmin();
+    else if (match) showDoc(decodeURIComponent(match[1]));
     else showHome();
   }
 
@@ -611,6 +626,7 @@
   }
 
   function initApiPanel() {
+    adminPanelInitialized = true;
     els.apiUrlInput.value = apiConfig.url || "http://127.0.0.1:8787";
     setApiStatus(apiConfig.sessionToken ? "检查登录态..." : "需要登录", apiConfig.sessionToken ? "busy" : "warn");
     updateSessionInfo();
@@ -752,7 +768,7 @@
       session_token: sessionToken,
       expires_at: params.get("v2m_expires_at") || "",
     });
-    history.replaceState(null, "", window.location.pathname + window.location.search);
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/admin`);
     Promise.all([loadProjects(), loadTasks()]).catch(() => {});
   }
 
@@ -1023,6 +1039,7 @@
   els.searchInput.addEventListener("input", renderDocGrid);
   els.clearSearch.addEventListener("click", () => { els.searchInput.value = ""; renderDocGrid(); });
   els.backHome.addEventListener("click", () => { location.hash = "#/"; });
+  els.backFromAdmin.addEventListener("click", () => { location.hash = "#/"; });
   els.uploadInput.addEventListener("change", handleUpload);
   els.sortRecent.addEventListener("click", () => { sortMode = "recent"; renderDocGrid(); });
   els.sortTitle.addEventListener("click", () => { sortMode = "title"; renderDocGrid(); });
@@ -1055,7 +1072,6 @@
   window.addEventListener("message", handleAuthMessage);
 
   rebuildDocs();
-  initApiPanel();
   consumeAuthHash();
   renderAll();
   route();
