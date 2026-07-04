@@ -107,10 +107,14 @@
     }
   }
 
-  function saveAccess(realm, token, expiresAt) {
+  function normalizedRole(role) {
+    return role === "admin" ? "admin" : "visitor";
+  }
+
+  function saveAccess(realm, token, expiresAt, role = "visitor") {
     try {
       const all = JSON.parse(localStorage.getItem(ACCESS_KEY) || "{}");
-      all[realm] = { token, expiresAt };
+      all[realm] = { token, expiresAt, role: normalizedRole(role) };
       localStorage.setItem(ACCESS_KEY, JSON.stringify(all));
     } catch (_error) {
       // Access can still work for the current response; persistence is best-effort.
@@ -122,7 +126,7 @@
       .map((item) => {
         const realm = item.access?.realm || item.slug;
         const stored = storedAccess(realm);
-        return stored?.token ? { project: item, realm, ...stored } : null;
+        return stored?.token ? { project: item, realm, ...stored, role: normalizedRole(stored.role) } : null;
       })
       .filter(Boolean);
   }
@@ -131,7 +135,7 @@
     if (project) {
       const realm = project.access?.realm || project.slug;
       const stored = storedAccess(realm);
-      if (stored?.token) return { project, realm, ...stored };
+      if (stored?.token) return { project, realm, ...stored, role: normalizedRole(stored.role) };
       return null;
     }
     return accessEntries()[0] || null;
@@ -355,6 +359,7 @@
       const data = await res.json().catch(() => ({}));
       accessState = { checked: true, allowed: Boolean(res.ok && data.ok), reason: data.error || "" };
       if (!accessState.allowed && res.status === 401) clearAccess(realm);
+      if (accessState.allowed && data.role && stored.token) saveAccess(realm, stored.token, stored.expiresAt, data.role);
     } catch (error) {
       accessState = { checked: true, allowed: false, reason: error.message || "verify failed" };
     }
@@ -425,15 +430,15 @@
     return data;
   }
 
-  async function submitPasscode(realm, passcode, stayRoute) {
+  async function submitPasscode(realm, passcode, stayRoute, role = "visitor") {
     const res = await fetch(`${API_URL}/api/access/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ realm, passcode }),
+      body: JSON.stringify({ realm, passcode, role: normalizedRole(role) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok || !data.token) throw new Error(data.error || "口令验证失败");
-    saveAccess(realm, data.token, data.expires_at || "");
+    saveAccess(realm, data.token, data.expires_at || "", data.role || role);
     if (stayRoute) window.location.href = stayRoute;
     else window.location.reload();
   }
@@ -517,9 +522,10 @@
   function renderAccount() {
     const entry = primaryAccessEntry();
     const signedIn = Boolean(entry);
-    els.accountAvatar.textContent = signedIn ? (entry.project.mark || "管") : "访";
-    els.accountLabel.textContent = signedIn ? "已登录" : "访客";
+    els.accountAvatar.textContent = signedIn ? (entry.role === "admin" ? "管" : (entry.project.mark || "访")) : "访";
+    els.accountLabel.textContent = signedIn ? (entry.role === "admin" ? "管理员" : "访客已登录") : "访客";
     els.accountButton.classList.toggle("signed-in", signedIn);
+    els.accountButton.classList.toggle("admin-session", signedIn && entry.role === "admin");
     if (!els.accountPopover.hidden) renderAccountPopover();
   }
 
@@ -559,6 +565,7 @@
           <span>项目空间</span>
           <select name="realm">${projectOptions}</select>
         </label>
+        <input name="role" type="hidden" value="visitor" />
         <label>
           <span>口令</span>
           <input name="passcode" type="password" autocomplete="current-password" placeholder="Enter project passcode" required />
@@ -572,29 +579,61 @@
 
   function renderAdminPopover(entries) {
     const active = primaryAccessEntry() || entries[0];
+    const roleLabel = active.role === "admin" ? "管理员会话已验证" : "访客会话已验证";
+    const canElevate = active.role !== "admin";
     els.accountPopover.innerHTML = `
       <section class="admin-card compact">
         <div class="admin-head">
           <span class="account-avatar signed-in">${escapeHtml(active.project.mark || "管")}</span>
           <span>
             <strong>${escapeHtml(active.project.title)}</strong>
-            <em>管理员会话已验证</em>
+            <em>${escapeHtml(roleLabel)}</em>
           </span>
         </div>
-        <p>管理端属于中央站点公共能力：项目接入走 projects.yaml，访问控制走后台 Worker secrets，部署走中心仓库构建产物。</p>
+        <p>${active.role === "admin"
+          ? "管理员可在线编辑正文、上传图片、回复评论；修改会写入后台覆盖层，不直接改项目仓库。"
+          : "访客可浏览文档、发布评论、回复评论，并对选中的正文添加公开批注。"
+        }</p>
         <div class="admin-actions">
           <a class="open-button" href="${escapeHtml(active.project.route)}">打开项目</a>
+          ${canElevate ? `<button class="ghost-button" id="adminLoginButton" type="button">管理员登录</button>` : `<a class="ghost-button" href="/admin/">管理面板</a>`}
           <a class="ghost-button" href="${escapeHtml(API_URL)}/api/health">API health</a>
           <button class="ghost-button" id="logoutButton" type="button">退出全部</button>
         </div>
       </section>
     `;
+    $("adminLoginButton")?.addEventListener("click", () => renderAccountLoginForAdmin(active));
     $("logoutButton")?.addEventListener("click", () => {
       clearAccess();
       closeAccountPopover();
       renderAccount();
       if (project) window.location.reload();
     });
+  }
+
+  function renderAccountLoginForAdmin(active) {
+    const targetProject = active?.project || project || projects[0];
+    const realm = targetProject?.access?.realm || targetProject?.slug || "";
+    pendingLoginRoute = targetProject?.route || pendingLoginRoute || "/home/";
+    els.accountPopover.innerHTML = `
+      <form class="account-login" id="accountLoginForm">
+        <h2>管理员登录</h2>
+        <p>输入管理员口令后可编辑正文、上传图片，并以管理员身份回复评论。</p>
+        <input name="realm" type="hidden" value="${escapeHtml(realm)}" />
+        <input name="role" type="hidden" value="admin" />
+        <label>
+          <span>项目空间</span>
+          <input value="${escapeHtml(targetProject?.title || realm)}" disabled />
+        </label>
+        <label>
+          <span>管理员口令</span>
+          <input name="passcode" type="password" autocomplete="current-password" placeholder="Enter admin passcode" required />
+        </label>
+        <button type="submit">进入管理</button>
+        <p class="form-status" id="accountLoginStatus"></p>
+      </form>
+    `;
+    bindAccountLoginForm();
   }
 
   function bindAccountLoginForm() {
@@ -605,12 +644,14 @@
       const status = $("accountLoginStatus");
       const data = new FormData(form);
       const realm = String(data.get("realm") || "");
+      const role = normalizedRole(String(data.get("role") || "visitor"));
       const passcode = String(data.get("passcode") || "");
-      const option = Array.from(form.elements.realm.options).find((item) => item.value === realm);
+      const realmField = form.elements.realm;
+      const option = realmField?.options ? Array.from(realmField.options).find((item) => item.value === realm) : null;
       const target = pendingLoginRoute || option?.dataset.route || "/home/";
       status.textContent = "验证中...";
       try {
-        await submitPasscode(realm, passcode, target);
+        await submitPasscode(realm, passcode, target, role);
       } catch (error) {
         status.textContent = error.message || "验证失败";
       }
@@ -752,6 +793,7 @@
     `;
     hydrateProtectedImages(els.documentPanel);
     bindDocTools(doc);
+    if (!isEditing) bindTaskCheckboxes(doc, effectiveBody);
     bindDiscussionPanel(doc);
     if (!isEditing) bindSelectionAnnotations(doc);
     loadRemoteDiscussions(doc.id).then((entry) => {
@@ -766,14 +808,15 @@
   function canEditProject() {
     if (!project) return false;
     const realm = project.access?.realm || project.slug;
-    return primaryAccessEntry()?.realm === realm;
+    const entry = primaryAccessEntry();
+    return entry?.realm === realm && entry.role === "admin";
   }
 
   function renderDocTools(doc, body, isEditing) {
     if (!canEditProject()) return "";
     return `
       <div class="doc-tools">
-        <span>${docOverrides[doc.id] ? "正在使用后台覆盖版本" : "正文来自项目仓库"}</span>
+        <span id="docToolStatus">${docOverrides[doc.id] ? "正在使用后台覆盖版本" : "正文来自项目仓库"}</span>
         <div>
           ${isEditing ? "" : `<button class="ghost-button" id="editDocButton" type="button">编辑正文</button>`}
         </div>
@@ -838,6 +881,45 @@
       } finally {
         event.target.value = "";
       }
+    });
+  }
+
+  function bindTaskCheckboxes(doc, body) {
+    const checkboxes = Array.from(els.documentPanel.querySelectorAll(".doc-body input[data-task-index]"));
+    if (!checkboxes.length) return;
+    const editable = canEditProject();
+    checkboxes.forEach((box) => {
+      if (!editable) {
+        box.disabled = true;
+        return;
+      }
+      box.addEventListener("change", async () => {
+        const index = Number(box.dataset.taskIndex || "-1");
+        const checked = box.checked;
+        const status = $("docToolStatus");
+        const nextBody = updateTaskMarker(body, index, checked);
+        if (!nextBody || nextBody === body) return;
+        box.disabled = true;
+        if (status) status.textContent = "正在保存任务状态...";
+        try {
+          await saveDocOverride(doc.id, nextBody);
+          if (status) status.textContent = "任务状态已保存到后台";
+          showDoc(doc.id, { skipHash: true, keepDirectoryState: true });
+        } catch (error) {
+          box.checked = !checked;
+          box.disabled = false;
+          if (status) status.textContent = error.message || "任务状态保存失败";
+        }
+      });
+    });
+  }
+
+  function updateTaskMarker(markdown, taskIndex, checked) {
+    let seen = -1;
+    return String(markdown || "").replace(/^(\s*(?:[-*]|\d+\.)\s+\[)([ xX])(\]\s+)/gm, (match, before, _flag, after) => {
+      seen += 1;
+      if (seen !== taskIndex) return match;
+      return `${before}${checked ? "x" : " "}${after}`;
     });
   }
 
@@ -1092,6 +1174,7 @@
     let codeLines = [];
     let mathLines = [];
     let table = [];
+    let taskIndex = 0;
     const flushParagraph = () => {
       if (paragraph.length) {
         html += `<p>${inline(paragraph.join(" "))}</p>`;
@@ -1155,7 +1238,9 @@
         let body = ordered ? ordered[2] : unordered[2];
         const task = /^\[([ xX])\]\s+(.+)$/.exec(body);
         if (task) {
-          body = `<label class="task-item"><input type="checkbox" ${task[1].toLowerCase() === "x" ? "checked" : ""}> <span>${inline(task[2])}</span></label>`;
+          const index = taskIndex;
+          taskIndex += 1;
+          body = `<label class="task-item"><input type="checkbox" data-task-index="${index}" ${task[1].toLowerCase() === "x" ? "checked" : ""}> <span>${inline(task[2])}</span></label>`;
         } else {
           body = inline(body);
         }

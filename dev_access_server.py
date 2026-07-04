@@ -15,13 +15,17 @@ from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 SITE = ROOT / "_site"
-TOKENS: dict[str, str] = {}
+TOKENS: dict[str, dict[str, str]] = {}
 DISCUSSIONS: dict[str, dict] = {}
 OVERLAYS: dict[str, dict] = {}
 UPLOADS: dict[str, tuple[bytes, str]] = {}
 REALM_HASH_ENV = {
     "video2mesh": "RELUMEOW_ACCESS_VIDEO2MESH_HASH",
     "challengecup-agent-system": "RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH",
+}
+REALM_ADMIN_HASH_ENV = {
+    "video2mesh": "RELUMEOW_ADMIN_VIDEO2MESH_HASH",
+    "challengecup-agent-system": "RELUMEOW_ADMIN_CHALLENGECUP_AGENT_SYSTEM_HASH",
 }
 
 
@@ -44,7 +48,7 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
@@ -57,31 +61,35 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/access/login":
             body = self.read_json()
             realm = str(body.get("realm") or "")
+            role = normalize_role(str(body.get("role") or "visitor"))
             passcode = str(body.get("passcode") or "")
-            if not verify_passcode(realm, passcode):
+            if not verify_passcode(realm, passcode, role):
                 self.reply({"ok": False, "error": "invalid passcode"}, HTTPStatus.UNAUTHORIZED)
                 return
             token = secrets.token_urlsafe(32)
-            TOKENS[token] = realm
-            self.reply({"ok": True, "realm": realm, "token": token, "expires_at": "dev"})
+            TOKENS[token] = {"realm": realm, "role": role}
+            self.reply({"ok": True, "realm": realm, "role": role, "token": token, "expires_at": "dev"})
             return
         if parsed.path == "/api/access/verify":
             body = self.read_json()
             realm = str(body.get("realm") or "")
             token = str(body.get("token") or "")
-            self.reply({"ok": bool(token and TOKENS.get(token) == realm)}, HTTPStatus.OK if TOKENS.get(token) == realm else HTTPStatus.UNAUTHORIZED)
+            session = TOKENS.get(token)
+            ok = bool(session and session.get("realm") == realm)
+            self.reply({"ok": ok, "realm": realm, "role": session.get("role", "visitor") if session else "visitor"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
         if parsed.path.startswith("/api/discussions/"):
             parts = parsed.path.split("/")
             realm, doc_id = parts[3], unquote(parts[4])
             if not self.check_token(realm):
                 return
+            session = self.session_for(realm) or {}
             current = DISCUSSIONS.setdefault(f"{realm}:{doc_id}", {"comments": [], "annotations": []})
             body = self.read_json()
             kind = str(body.get("kind") or "")
             item = {
                 "id": str(body.get("id") or uuid.uuid4()),
-                "author": "访客",
+                "author": "管理员" if session.get("role") == "admin" else "访客",
                 "text": str(body.get("text") or "")[:1200],
                 "createdAt": str(body.get("createdAt") or "dev"),
             }
@@ -101,7 +109,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/uploads/"):
             parts = parsed.path.split("/")
             realm, doc_id = parts[3], unquote(parts[4])
-            if not self.check_token(realm):
+            if not self.check_token(realm, require_admin=True):
                 return
             raw = self.rfile.read(int(self.headers.get("Content-Length") or "0"))
             marker = b"\r\n\r\n"
@@ -120,7 +128,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/overlays/"):
             parts = parsed.path.split("/")
             realm, doc_id = parts[3], unquote(parts[4])
-            if not self.check_token(realm):
+            if not self.check_token(realm, require_admin=True):
                 return
             body = self.read_json()
             overlay = {"body": str(body.get("body") or ""), "updatedAt": "dev", "updatedBy": "admin"}
@@ -194,12 +202,19 @@ class Handler(SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
-    def check_token(self, realm: str) -> bool:
+    def session_for(self, realm: str) -> dict[str, str] | None:
         header = self.headers.get("Authorization", "")
         token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if TOKENS.get(token) == realm:
+        session = TOKENS.get(token)
+        if session and session.get("realm") == realm:
+            return session
+        return None
+
+    def check_token(self, realm: str, require_admin: bool = False) -> bool:
+        session = self.session_for(realm)
+        if session and (not require_admin or session.get("role") == "admin"):
             return True
-        self.reply({"ok": False, "error": "invalid token"}, HTTPStatus.UNAUTHORIZED)
+        self.reply({"ok": False, "error": "admin token required" if session else "invalid token"}, HTTPStatus.FORBIDDEN if session else HTTPStatus.UNAUTHORIZED)
         return False
 
     def read_json(self) -> dict:
@@ -217,9 +232,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(raw)
 
 
-def verify_passcode(realm: str, passcode: str) -> bool:
+def normalize_role(role: str) -> str:
+    return "admin" if role == "admin" else "visitor"
+
+
+def verify_passcode(realm: str, passcode: str, role: str = "visitor") -> bool:
     salt = os.environ.get("RELUMEOW_ACCESS_SALT", "")
-    expected = os.environ.get(REALM_HASH_ENV.get(realm, ""), "")
+    env_name = REALM_ADMIN_HASH_ENV.get(realm, "") if normalize_role(role) == "admin" else REALM_HASH_ENV.get(realm, "")
+    expected = os.environ.get(env_name, "")
     if not salt or not expected or not passcode:
         return False
     actual = hashlib.sha256(f"{salt}:{passcode}".encode("utf-8")).hexdigest()

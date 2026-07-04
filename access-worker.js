@@ -1,11 +1,13 @@
 const REALMS = {
   "video2mesh": {
     title: "Video2Mesh",
-    hashEnv: "RELUMEOW_ACCESS_VIDEO2MESH_HASH",
+    visitorHashEnv: "RELUMEOW_ACCESS_VIDEO2MESH_HASH",
+    adminHashEnv: "RELUMEOW_ADMIN_VIDEO2MESH_HASH",
   },
   "challengecup-agent-system": {
     title: "ChallengeCup Agent System",
-    hashEnv: "RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH",
+    visitorHashEnv: "RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH",
+    adminHashEnv: "RELUMEOW_ADMIN_CHALLENGECUP_AGENT_SYSTEM_HASH",
   },
 };
 
@@ -93,20 +95,24 @@ export default {
 async function handleLogin(request, env, cors) {
   const body = await readJson(request);
   const realm = normalizeRealm(body.realm);
+  const role = normalizeRole(body.role);
   const passcode = String(body.passcode || "");
   if (!REALMS[realm] || !passcode) {
     return json({ ok: false, error: "invalid realm or passcode" }, cors, 400);
   }
 
-  const expectedHash = env[REALMS[realm].hashEnv];
+  const expectedHash = expectedPasscodeHash(realm, role, env);
+  if (!expectedHash) {
+    return json({ ok: false, error: role === "admin" ? "admin login is not configured" : "access login is not configured" }, cors, 403);
+  }
   const allowed = await verifyPasscodeHash(passcode, expectedHash, env);
   if (!allowed) {
     return json({ ok: false, error: "invalid passcode" }, cors, 401);
   }
 
   const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
-  const token = await signToken({ realm, exp, nonce: crypto.randomUUID() }, env);
-  return json({ ok: true, realm, token, expires_at: new Date(exp * 1000).toISOString() }, cors);
+  const token = await signToken({ realm, role, exp, nonce: crypto.randomUUID() }, env);
+  return json({ ok: true, realm, role, token, expires_at: new Date(exp * 1000).toISOString() }, cors);
 }
 
 async function handleVerify(request, env, cors) {
@@ -114,7 +120,7 @@ async function handleVerify(request, env, cors) {
   const realm = normalizeRealm(body.realm);
   const token = String(body.token || bearerToken(request) || "");
   const result = await verifyTokenForRealm(token, realm, env);
-  return json(result.ok ? { ok: true, realm } : { ok: false, error: result.error }, cors, result.ok ? 200 : 401);
+  return json(result.ok ? { ok: true, realm, role: result.payload.role } : { ok: false, error: result.error }, cors, result.ok ? 200 : 401);
 }
 
 async function handleProjectData(rawRealm, request, env, cors) {
@@ -158,7 +164,7 @@ async function handleDiscussion(rawRealm, rawDocId, request, env, cors) {
 
   const body = await readJson(request);
   const kind = String(body.kind || "").trim();
-  const item = sanitizeDiscussionItem(kind, body);
+  const item = sanitizeDiscussionItem(kind, body, gate.role);
   if (!item) return json({ ok: false, error: "invalid discussion item" }, cors, 400);
 
   if (kind === "annotation") {
@@ -187,7 +193,7 @@ async function handleProjectOverlays(rawRealm, request, env, cors) {
 
 async function handleDocOverlay(rawRealm, rawDocId, request, env, cors) {
   const realm = normalizeRealm(rawRealm);
-  const gate = await requireRealmAccess(realm, request, env);
+  const gate = await requireAdminAccess(realm, request, env);
   if (!gate.ok) return json({ ok: false, error: gate.error }, cors, gate.status);
   const docId = sanitizeDocId(rawDocId);
   if (!docId) return json({ ok: false, error: "invalid doc id" }, cors, 400);
@@ -211,7 +217,7 @@ async function handleDocOverlay(rawRealm, rawDocId, request, env, cors) {
 
 async function handleUpload(rawRealm, rawDocId, request, env, cors) {
   const realm = normalizeRealm(rawRealm);
-  const gate = await requireRealmAccess(realm, request, env);
+  const gate = await requireAdminAccess(realm, request, env);
   if (!gate.ok) return json({ ok: false, error: gate.error }, cors, gate.status);
   const docId = sanitizeDocId(rawDocId);
   if (!docId) return json({ ok: false, error: "invalid doc id" }, cors, 400);
@@ -267,6 +273,17 @@ function normalizeRealm(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeRole(value) {
+  return String(value || "").trim().toLowerCase() === "admin" ? "admin" : "visitor";
+}
+
+function expectedPasscodeHash(realm, role, env) {
+  const config = REALMS[realm];
+  if (!config) return "";
+  if (role === "admin") return String(env[config.adminHashEnv] || "");
+  return String(env[config.visitorHashEnv] || "");
+}
+
 function sanitizeAssetPath(rawPath) {
   let decoded = "";
   try {
@@ -289,13 +306,13 @@ function sanitizeDocId(rawDocId) {
   return /^[\w\u4e00-\u9fff.-]{1,160}$/.test(decoded) ? decoded : "";
 }
 
-function sanitizeDiscussionItem(kind, body) {
+function sanitizeDiscussionItem(kind, body, role = "visitor") {
   if (kind !== "comment" && kind !== "annotation" && kind !== "reply") return null;
   const text = clampText(body.text, 1200);
   if (!text) return null;
   const item = {
     id: clampText(body.id, 80) || crypto.randomUUID(),
-    author: "访客",
+    author: role === "admin" ? "管理员" : "访客",
     text,
     createdAt: clampText(body.createdAt, 40) || new Date().toISOString(),
   };
@@ -369,7 +386,14 @@ async function requireRealmAccess(realm, request, env) {
   if (!REALMS[realm]) return { ok: false, error: "invalid realm", status: 400 };
   const result = await verifyTokenForRealm(bearerToken(request), realm, env);
   if (!result.ok) return { ok: false, error: result.error, status: 401 };
-  return { ok: true };
+  return { ok: true, role: result.payload.role, payload: result.payload };
+}
+
+async function requireAdminAccess(realm, request, env) {
+  const gate = await requireRealmAccess(realm, request, env);
+  if (!gate.ok) return gate;
+  if (gate.role !== "admin") return { ok: false, error: "admin token required", status: 403 };
+  return gate;
 }
 
 function safeImageExtension(name, type) {
@@ -425,6 +449,7 @@ async function verifyTokenForRealm(token, realm, env) {
   }
   if (payload.realm !== realm) return { ok: false, error: "wrong realm" };
   if (Number(payload.exp || 0) < Math.floor(Date.now() / 1000)) return { ok: false, error: "token expired" };
+  payload.role = normalizeRole(payload.role);
   return { ok: true, payload };
 }
 
@@ -504,7 +529,7 @@ function corsHeaders(request, env) {
   const allowOrigin = allowed.includes(origin) ? origin : allowed[0] || "https://relumeow.top";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",

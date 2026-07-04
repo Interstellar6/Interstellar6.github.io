@@ -393,6 +393,10 @@ body.rail-collapsed .rail-toggle span {
   background: var(--accent);
   color: var(--accent-ink);
 }
+.account-button.admin-session .account-avatar {
+  background: var(--amber);
+  color: #15100a;
+}
 .account-popover {
   position: absolute;
   top: calc(100% + 10px);
@@ -697,6 +701,10 @@ body[data-view="home"] .content-topbar h1 {
 .doc-body input[type="checkbox"] {
   accent-color: var(--accent);
   transform: translateY(1px);
+}
+.doc-body input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.72;
 }
 .doc-body .task-item {
   display: inline-flex;
@@ -1003,9 +1011,37 @@ html[data-theme="light"] .doc-body pre {
 @media (max-width: 1080px) {
   :root { --rail-width: 230px; }
   .workspace-shell { grid-template-columns: 0 0 minmax(0, 1fr); }
-  .project-rail,
+  .project-rail {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 45;
+    width: min(84vw, 330px);
+    display: block;
+    transform: translateX(-100%);
+    opacity: 0;
+    visibility: hidden;
+    box-shadow: var(--shadow);
+  }
+  body:not(.rail-collapsed) .project-rail {
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
   .rail-resizer { display: none; }
-  .rail-toggle { display: none; }
+  .rail-toggle {
+    display: grid;
+    left: 14px;
+  }
+  .rail-toggle span { transform: rotate(135deg); }
+  body:not(.rail-collapsed) .rail-toggle {
+    left: min(calc(84vw + 10px), 340px);
+  }
+  body:not(.rail-collapsed) .rail-toggle span {
+    transform: rotate(-45deg);
+  }
 }
 
 @media (max-width: 760px) {

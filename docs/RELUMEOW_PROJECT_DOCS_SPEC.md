@@ -447,18 +447,21 @@ projects:
 
 | 数据 | 后台记录 | 可见性 |
 |---|---|---|
-| 评论 | `discussion:<realm>:<doc-id>` | 同一项目授权访客可见 |
-| 评论回复 | 同一 discussion 记录内的 comment replies | 同一项目授权访客可见 |
-| 批注 | 同一 discussion 记录内的 annotations | 同一项目授权访客可见 |
-| 管理员正文更新 | `doc-overlay:<realm>:<doc-id>` 与项目 overlay index | 渲染时覆盖原文，不改项目仓库 |
-| 上传图片 | `upload:<realm>:<doc-id>:<file>` | 通过受保护 API 读取 |
+| 评论 | `discussion:<realm>:<doc-id>` | 同一项目授权访客可见，可由访客或管理员发布 |
+| 评论回复 | 同一 discussion 记录内的 comment replies | 同一项目授权访客可见，可由访客或管理员回复 |
+| 批注 | 同一 discussion 记录内的 annotations | 同一项目授权访客可见，可由访客或管理员添加 |
+| 管理员正文更新 | `doc-overlay:<realm>:<doc-id>` 与项目 overlay index | 需要管理员 token，渲染时覆盖原文，不改项目仓库 |
+| checklist 勾选更新 | 写入同一 `doc-overlay:<realm>:<doc-id>` | 需要管理员 token，把 Markdown 原文里的 `[ ]` / `[x]` 更新到后台覆盖层 |
+| 上传图片 | `upload:<realm>:<doc-id>:<file>` | 需要管理员 token 上传，授权访客通过受保护 API 读取 |
 
 管理员在线编辑规则：
 
 1. 管理员入口从右上角身份信息进入；普通导航不暴露 `/admin` 独立入口。
-2. 管理员可编辑当前文档正文 Markdown，并上传图片插入正文。
-3. 保存后的正文作为站点覆盖层生效，保留原始项目文档源路径和更新时间标记。
-4. 正式长期内容仍应在项目仓库内提交；后台覆盖层只解决即时协作和线上修订。
+2. 访客口令和管理员口令分开配置，前端只保存后台签发的短期 token 与 role，不能暴露任何明文口令或 hash。
+3. 管理员可编辑当前文档正文 Markdown，并上传图片插入正文。
+4. 管理员在正文里勾选任务列表时，站点把 Markdown 原文中的 `[ ]` / `[x]` 更新进后台覆盖层；访客只能查看勾选状态。
+5. 保存后的正文作为站点覆盖层生效，保留原始项目文档源路径和更新时间标记。
+6. 正式长期内容仍应在项目仓库内提交；后台覆盖层只解决即时协作和线上修订。
 
 ## 14. 接入检查表
 
