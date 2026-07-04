@@ -17,7 +17,7 @@ projects:
     subtitle: Field Notes
     description: 从扫描视频到可交互 3D 场景资产的项目文档、技术调研和运行记录。
     access:
-      mode: passcode
+      mode: public
       realm: video2mesh
       label: Video2Mesh 项目空间
     source:
