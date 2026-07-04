@@ -336,6 +336,10 @@
     setVisible("home");
     els.routeLabel.textContent = "Home";
     els.pageTitle.textContent = "Project spaces";
+    const docCountLabel = (item) => {
+      if (Number(item.doc_count || 0) > 0) return `${item.doc_count} docs`;
+      return item.access?.mode === "passcode" ? "Protected content" : "No docs yet";
+    };
     els.homeView.innerHTML = `
       <section class="home-hero">
         <div>
@@ -355,7 +359,7 @@
               <h3>${escapeHtml(item.title)}</h3>
               <p>${escapeHtml(item.description || "")}</p>
               <div class="project-meta">
-                <span>${item.doc_count || 0} docs</span>
+                <span>${escapeHtml(docCountLabel(item))}</span>
                 <span>${item.access?.mode === "passcode" ? "Protected by server-side access" : "Public"}</span>
               </div>
             </div>

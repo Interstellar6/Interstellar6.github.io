@@ -21,21 +21,6 @@ jobs:
     steps:
       - name: Checkout central site
         uses: actions/checkout@v4
-        with:
-          path: interstellar6.github.io
-
-      - name: Checkout Video2Mesh docs source
-        uses: actions/checkout@v4
-        with:
-          repository: Interstellar6/Video2Mesh
-          path: Video2Mesh
-
-      - name: Checkout ChallengeCup docs source
-        uses: actions/checkout@v4
-        with:
-          repository: MIL-ChallengeCup-Team1/test-agent-system
-          ref: dev
-          path: ChallengeCup
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -46,10 +31,7 @@ jobs:
         run: python -m pip install pyyaml
 
       - name: Build static shell
-        working-directory: interstellar6.github.io
-        run: |
-          python build_site.py
-          rm -rf _site/_protected
+        run: RELUMEOW_PAGES_SHELL_ONLY=1 python build_site.py
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
@@ -57,7 +39,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: interstellar6.github.io/_site
+          path: _site
 
   deploy:
     environment:

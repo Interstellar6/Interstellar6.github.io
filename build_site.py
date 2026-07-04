@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -420,6 +421,25 @@ def build_project(project: dict[str, Any], site_config: dict[str, Any]) -> tuple
     return target, public_docs, payload
 
 
+def build_project_shell(project: dict[str, Any], site_config: dict[str, Any]) -> dict[str, Any]:
+    route = project["route"].strip("/")
+    target = BUILD_DIR / route
+    target.mkdir(parents=True, exist_ok=True)
+    copy_shell_files(target)
+    seed = shell_project(project)
+    payload = {
+        "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "site": site_config,
+        "project": seed,
+        "docs": [],
+        "categories": [],
+        "tree": [],
+        "protected": is_protected(project),
+    }
+    write_jsonp(target / "site-data.js", "RELUMEOW_DATA", payload)
+    return payload
+
+
 def build_project_summaries(project_payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summaries = []
     for payload in project_payloads:
@@ -430,6 +450,8 @@ def build_project_summaries(project_payloads: list[dict[str, Any]]) -> list[dict
             if protected_file.exists():
                 docs = json.loads(protected_file.read_text(encoding="utf-8")).get("docs", [])
         overview = next((doc for doc in docs if doc.get("is_overview") and not doc.get("directory")), docs[0] if docs else {})
+        doc_count = len(docs) if docs else int(project.get("doc_count") or 0)
+        updated = max((doc.get("updated", "") for doc in docs), default="") if docs else project.get("updated", "")
         summaries.append({
             "slug": project["slug"],
             "route": project["route"],
@@ -439,9 +461,9 @@ def build_project_summaries(project_payloads: list[dict[str, Any]]) -> list[dict
             "subtitle": project.get("subtitle", ""),
             "description": project["description"],
             "access": project.get("access", {}),
-            "doc_count": len(docs),
-            "overview_id": overview.get("id", ""),
-            "updated": max((doc.get("updated", "") for doc in docs), default=""),
+            "doc_count": doc_count,
+            "overview_id": overview.get("id", project.get("overview_id", "")),
+            "updated": updated,
         })
     return summaries
 
@@ -501,14 +523,20 @@ def build_static_routes(site_config: dict[str, Any], summaries: list[dict[str, A
 def main() -> int:
     config = yaml.safe_load(PROJECTS_FILE.read_text(encoding="utf-8"))
     site_config = config.get("site", {})
+    shell_only = os.environ.get("RELUMEOW_PAGES_SHELL_ONLY") == "1"
     if BUILD_DIR.exists():
         shutil.rmtree(BUILD_DIR)
     BUILD_DIR.mkdir(parents=True)
     project_payloads = []
     for project in config.get("projects", []):
-        _target, docs, payload = build_project(project, site_config)
-        project_payloads.append(payload)
-        print(f"- built {project['slug']}: {len(docs)} public docs")
+        if shell_only:
+            payload = build_project_shell(project, site_config)
+            project_payloads.append(payload)
+            print(f"- built {project['slug']}: shell only")
+        else:
+            _target, docs, payload = build_project(project, site_config)
+            project_payloads.append(payload)
+            print(f"- built {project['slug']}: {len(docs)} public docs")
     summaries = build_project_summaries(project_payloads)
     write_project_route_summaries(project_payloads, summaries)
     build_home(site_config, summaries)

@@ -69,4 +69,9 @@ Cloudflare 文档要求敏感值使用 secrets；`wrangler secret put` 会创建
 
 ## GitHub Pages 备选
 
-如果临时只走 GitHub Pages，`_site/` 仍然可作为静态站发布，`CNAME` 会指向 `relumeow.top`。但 GitHub Pages 无法保护 `_protected/`，所以受保护项目必须使用 Cloudflare Worker 或其它后台 API 承载。不要把 `_site/_protected/` 部署到纯静态 Pages。
+如果临时只走 GitHub Pages，workflow 使用 `RELUMEOW_PAGES_SHELL_ONLY=1 python build_site.py`，只发布 Home、身份入口、项目卡片和项目锁定页。它不 checkout 项目内容源仓库，也不会生成或上传 `_site/_protected/`。
+
+这样做有两个边界：
+
+- GitHub Pages 负责让 `relumeow.top/home/`、`/login/`、`/admin/`、`/video2mesh/`、`/challengecup-agent-system/` 这些公共壳可访问。
+- 受保护项目的 Markdown 正文、图片和目录树必须使用 Cloudflare Worker 或其它后台 API 承载；不要把 `_site/_protected/` 部署到纯静态 Pages。
