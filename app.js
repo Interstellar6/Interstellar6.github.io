@@ -334,42 +334,64 @@
 
   function renderHome() {
     setVisible("home");
-    els.routeLabel.textContent = "Home";
+    els.routeLabel.textContent = "relumeow.top";
     els.pageTitle.textContent = "Project spaces";
-    const docCountLabel = (item) => {
-      if (Number(item.doc_count || 0) > 0) return `${item.doc_count} docs`;
-      return item.access?.mode === "passcode" ? "Protected content" : "No docs yet";
-    };
+    const projectTone = (item) => item.slug.includes("challenge") ? "agent" : "mesh";
+    const intakeItems = [
+      ["new", "新建项目", "初始化项目空间"],
+      ["import", "导入项目", "接入仓库文档源"],
+      ["access", "权限管理", "维护访问策略"],
+      ["overview", "全局概览", "检查发布状态"],
+    ];
     els.homeView.innerHTML = `
-      <section class="home-hero">
-        <div>
-          <h2>relumeow.top</h2>
-          <p>统一管理项目文档、调研目录、实验进度和管理端入口。项目知识留在各自仓库，中央站点只负责聚合、导航、权限和发布。</p>
+      <section class="home-command">
+        <div class="home-line-art" aria-hidden="true">
+          <svg viewBox="0 0 420 160">
+            <path d="M22 118 H398" />
+            <path d="M84 118 V68 H132 V118" />
+            <path d="M154 118 V48 H186 V118" />
+            <path d="M210 118 V32 H340 V118" />
+            <path d="M244 62 H314 M244 82 H294 M244 102 H326" />
+            <path d="M72 118 C92 86 112 86 132 118" />
+            <path d="M306 118 L344 76 L382 118 M344 76 V42" />
+            <circle cx="344" cy="42" r="8" />
+            <circle cx="306" cy="118" r="6" />
+            <circle cx="382" cy="118" r="6" />
+          </svg>
         </div>
-        <div class="hero-proof">
-          <strong>Manifest driven</strong>
-          <span>projects.yaml → route → source docs → unified shell</span>
+        <div class="home-summary">
+          <h2>relumeow.top</h2>
+          <div class="home-status-line">
+            <span>${projects.length} 个项目</span>
+            <span>统一文档聚合</span>
+            <span>权限受保护</span>
+          </div>
+          <p>项目知识留在各自仓库，relumeow.top 负责入口、权限、主题和发布。</p>
         </div>
       </section>
-      <section class="project-table">
+      <section class="home-project-list" aria-label="项目入口">
         ${projects.map((item) => `
-          <article class="project-card">
+          <article class="home-project home-project--${projectTone(item)}">
             <span class="project-mark large">${escapeHtml(item.mark || item.title.slice(0, 2))}</span>
-            <div>
+            <div class="home-project-copy">
               <h3>${escapeHtml(item.title)}</h3>
               <p>${escapeHtml(item.description || "")}</p>
-              <div class="project-meta">
-                <span>${escapeHtml(docCountLabel(item))}</span>
-                <span>${item.access?.mode === "passcode" ? "Protected by server-side access" : "Public"}</span>
-              </div>
             </div>
-            <a class="open-button" href="${escapeHtml(item.route)}">Open</a>
+            <span class="home-project-status">${item.access?.mode === "passcode" ? "需口令" : "公开"}</span>
+            <a class="open-button" href="${escapeHtml(item.route)}">进入</a>
           </article>
         `).join("")}
       </section>
-      <section class="workspace-preview">
-        <h3>Overview opens by default</h3>
-        <p>目录节点不再把 README 当作普通条目重复列出。点击目录时，正文区域显示该目录的 overview 文档，子文档由目录树管理。</p>
+      <section class="intake-strip" aria-label="项目入库">
+        ${intakeItems.map(([kind, title, detail]) => `
+          <button class="intake-item intake-item--${kind}" type="button">
+            <span class="intake-icon" aria-hidden="true"></span>
+            <span>
+              <strong>${escapeHtml(title)}</strong>
+              <em>${escapeHtml(detail)}</em>
+            </span>
+          </button>
+        `).join("")}
       </section>
     `;
     renderAccount();
