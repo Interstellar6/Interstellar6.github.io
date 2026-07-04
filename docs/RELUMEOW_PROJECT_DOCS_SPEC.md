@@ -12,14 +12,14 @@ tags:
 
 # relumeow.top 项目文档接入规范
 
-这份规范约束的是每个项目仓库内的文档源，不约束项目代码结构。目标是让 `relumeow.top` 能持续挂载更多项目，同时保持同一套导航、目录 overview、调研目录、进度目录和项目说明风格。整体交互参考飞书文档知识库：点进一个目录时，正文区域自动显示该目录的 `overview.md`，目录树负责展示子文档，不在正文里手工堆文件清单。
+这份规范约束的是每个项目仓库内的文档源，不约束项目代码结构。目标是让 `relumeow.top` 能持续挂载更多项目，同时保持同一套导航、目录 overview、调研目录、进度目录和项目说明风格。整体交互参考飞书文档知识库：点进项目总目录时显示项目 `README.md`，点进子目录时正文区域自动显示该目录的 `overview.md`，目录树负责展示子文档，不在正文里手工堆文件清单。
 
 ## 1. 基本原则
 
 1. 每个项目只维护自己的内容源，公共站点壳、主题、搜索、部署和域名由中央站点项目维护。
 2. 项目文档源统一放在 `docs/<project-slug>/`，其中 `<project-slug>` 必须和线上路由一致。
 3. 公开文档必须写明 front matter，不依赖构建器猜测标题、分类和摘要。
-4. 每个目录必须有自己的 `overview.md`。目录节点点击后显示该 overview，`overview.md` 不作为普通子文档重复列在目录里。
+4. 项目根目录必须有 `README.md` 作为项目总目录；每个子目录必须有自己的 `overview.md`。目录节点点击后显示对应 overview，`overview.md` 不作为普通子文档重复列在目录里。
 5. 公开文档尽量图文并茂；项目首页、目录 overview、调研阶段 overview、进度结果页必须至少有一张信息型图表或截图。
 6. 图片、图表和小型附件必须跟随文档一起提交；大模型、数据集、视频、3D raw asset、checkpoint 不进入文档站发布产物。
 7. 文档先说明边界和结论，再列证据、命令、指标和链接。避免把实验流水账直接暴露为主入口。
@@ -30,7 +30,7 @@ tags:
 
 ```text
 docs/<project-slug>/
-  overview.md
+  README.md
   project-docs/
     overview.md
     how-to-run.md
@@ -54,7 +54,7 @@ docs/<project-slug>/
 
 | 目录 | 作用 | 是否建议公开 |
 |---|---|---|
-| `overview.md` | 项目站首页，说明项目定位、目录和当前一句话结论 | 是 |
+| `README.md` | 项目站首页，说明项目定位、目录和当前一句话结论 | 是 |
 | `project-docs/` | 使用方式、架构、运行命令、部署、复现实验入口 | 是 |
 | `research-catalog/` | 模型、论文、工业项目、方案路线调研 | 是 |
 | `progress/` | 当前结果、周报、门禁结论、可展示产物 | 是 |
@@ -63,12 +63,13 @@ docs/<project-slug>/
 
 目录规则：
 
-1. `overview.md` 是目录的默认正文；例如点击 `/video2mesh/project-docs/` 时显示 `docs/video2mesh/project-docs/overview.md`。
-2. 中央站点导航应自动生成子目录和子文档树，`overview.md` 不在同级子文档列表里重复出现。
-3. `overview.md` 不承担“逐个列出本目录所有文件”的职责，只负责说明该目录的定位、结构图、推荐阅读路径和当前关键结论。
-4. `README.md` 可以作为 GitHub 兼容文件保留，但不是站内目录入口；如同时存在，站点以 `overview.md` 为准。
+1. 项目根 `README.md` 是项目总目录的默认正文；例如点击 Video2Mesh 根目录节点时显示 `docs/video2mesh/README.md`。
+2. 子目录 `overview.md` 是目录的默认正文；例如点击 `/video2mesh/project-docs/` 时显示 `docs/video2mesh/project-docs/overview.md`。
+3. 中央站点导航应自动生成子目录和子文档树，`overview.md` 不在同级子文档列表里重复出现。
+4. `overview.md` 不承担“逐个列出本目录所有文件”的职责，只负责说明该目录的定位、结构图、推荐阅读路径和当前关键结论。
+5. 如果根目录同时存在 `README.md` 和 `overview.md`，站点以 `README.md` 作为项目总目录入口。
 
-不要把项目主文档继续散落在仓库根目录。根目录 `README.md` 可以保留给 GitHub，但面向网站的结构化文档应进入 `docs/<project-slug>/`。
+不要把面向网站的主文档继续散落在仓库根目录；它们应进入 `docs/<project-slug>/`。根 `README.md` 既服务 GitHub，也服务 relumeow.top 项目总目录。
 
 ## 3. 命名规则
 
@@ -156,7 +157,7 @@ tags:
 
 ## 5. 目录 Overview 模板
 
-每个目录都用 `overview.md` 作为默认打开文档。项目根目录的 `docs/<project-slug>/overview.md` 使用这个结构：
+项目根目录用 `README.md` 作为默认打开文档；每个子目录用 `overview.md` 作为默认打开文档。项目根目录的 `docs/<project-slug>/README.md` 使用这个结构：
 
 ```markdown
 ---
@@ -312,7 +313,7 @@ data-contract.md
 
 | 文档类型 | 必须有的视觉元素 |
 |---|---|
-| 项目根 `overview.md` | 项目地图、系统架构图或阅读路径图 |
+| 项目根 `README.md` | 项目地图、系统架构图或阅读路径图 |
 | 子目录 `overview.md` | 该目录的流程图、阶段图、信息架构图或代表性结果图 |
 | 调研阶段 `overview.md` | 阶段 pipeline、方法对比图或决策矩阵 |
 | 单个论文/模型/项目调研 | 原论文/官网图、我们重画的接入图，或输入输出示意图 |
@@ -336,7 +337,7 @@ data-contract.md
 
 ## 10. Markdown 写作风格
 
-文档站支持标题、表格、代码块、本地图片、网络图片和普通 Markdown 链接。为了统一风格：
+文档站支持标题、表格、代码块、本地图片、网络图片、普通 Markdown 链接、Obsidian 图片语法、任务列表和 KaTeX 公式。为了统一风格：
 
 1. 每篇文档只使用一个一级标题，并与 `title` 基本一致。
 2. 二级标题用于主要段落，三级标题只在长文中使用。
@@ -346,6 +347,9 @@ data-contract.md
 6. 结论、状态和风险用短段落或表格表达，少用无边界长列表。
 7. 外部链接用 Markdown 链接，不裸贴一串 URL。
 8. 不在公开文档里写密钥、token、私人账号、远端机器密码或未脱敏数据路径。
+9. 任务列表使用 `- [ ]` 和 `- [x]`，不要手写 Unicode checkbox。
+10. 行内公式使用 `$...$`，块级公式使用 `$$...$$`。
+11. 项目内 `.md` 链接应使用相对路径，中央站点会尽量解析到站内文档路由。
 
 ## 11. 资产规范
 
@@ -401,7 +405,7 @@ projects:
       directory_overview: overview.md
       hide_overview_from_child_list: true
     pinned_docs:
-      - overview.md
+      - README.md
       - project-docs/overview.md
       - research-catalog/overview.md
       - progress/overview.md
@@ -435,12 +439,33 @@ projects:
 3. 如果目录缺少 `overview.md`，构建应给出警告；公开项目不应带着空目录上线。
 4. 文档正文不手写完整目录树，完整目录树由站点侧根据文件结构生成。
 
-## 13. 接入检查表
+## 13. 后台协作与在线编辑
+
+评论、批注、回复和管理员正文覆盖层属于中央站点后台能力，不应写回项目仓库源码。项目仓库仍是正式内容源；后台覆盖层用于在线临时修订、会议批注、访客反馈和图片补充。
+
+协作数据必须存放在后台内容存储中，不能只存在当前浏览器：
+
+| 数据 | 后台记录 | 可见性 |
+|---|---|---|
+| 评论 | `discussion:<realm>:<doc-id>` | 同一项目授权访客可见 |
+| 评论回复 | 同一 discussion 记录内的 comment replies | 同一项目授权访客可见 |
+| 批注 | 同一 discussion 记录内的 annotations | 同一项目授权访客可见 |
+| 管理员正文更新 | `doc-overlay:<realm>:<doc-id>` 与项目 overlay index | 渲染时覆盖原文，不改项目仓库 |
+| 上传图片 | `upload:<realm>:<doc-id>:<file>` | 通过受保护 API 读取 |
+
+管理员在线编辑规则：
+
+1. 管理员入口从右上角身份信息进入；普通导航不暴露 `/admin` 独立入口。
+2. 管理员可编辑当前文档正文 Markdown，并上传图片插入正文。
+3. 保存后的正文作为站点覆盖层生效，保留原始项目文档源路径和更新时间标记。
+4. 正式长期内容仍应在项目仓库内提交；后台覆盖层只解决即时协作和线上修订。
+
+## 14. 接入检查表
 
 新项目准备上传前，按这个清单检查：
 
 ```text
-[ ] docs/<project-slug>/overview.md 存在，并有完整 front matter 和项目地图图示
+[ ] docs/<project-slug>/README.md 存在，并有完整 front matter 和项目地图图示
 [ ] project-docs/overview.md 和 how-to-run.md 存在
 [ ] research-catalog/overview.md 存在；每个阶段目录有 overview.md
 [ ] progress/overview.md 或 current-results.md 存在
@@ -455,7 +480,7 @@ projects:
 [ ] 本地构建通过，并检查生成站点入口和调研目录
 ```
 
-## 14. 最小示例
+## 15. 最小示例
 
 一个最小可接入项目至少包含：
 

@@ -16,6 +16,12 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/_protected/*"]
   },
+  "kv_namespaces": [
+    {
+      "binding": "RELUMEOW_CONTENT",
+      "id": "4db5cd5f257f4a8a993302f6064ab4e8"
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 0.1

@@ -10,7 +10,8 @@ const REALMS = {
 };
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
-const MAX_JSON_BYTES = 4096;
+const MAX_JSON_BYTES = 256 * 1024;
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export default {
   async fetch(request, env) {
@@ -42,6 +43,31 @@ export default {
       const assetMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/assets\/(.+)$/);
       if (assetMatch && request.method === "GET") {
         return await handleProjectAsset(assetMatch[1], assetMatch[2], request, env, cors);
+      }
+
+      const discussionMatch = url.pathname.match(/^\/api\/discussions\/([^/]+)\/([^/]+)$/);
+      if (discussionMatch && (request.method === "GET" || request.method === "POST")) {
+        return await handleDiscussion(discussionMatch[1], discussionMatch[2], request, env, cors);
+      }
+
+      const overlaysMatch = url.pathname.match(/^\/api\/overlays\/([^/]+)$/);
+      if (overlaysMatch && request.method === "GET") {
+        return await handleProjectOverlays(overlaysMatch[1], request, env, cors);
+      }
+
+      const overlayDocMatch = url.pathname.match(/^\/api\/overlays\/([^/]+)\/([^/]+)$/);
+      if (overlayDocMatch && request.method === "PUT") {
+        return await handleDocOverlay(overlayDocMatch[1], overlayDocMatch[2], request, env, cors);
+      }
+
+      const uploadMatch = url.pathname.match(/^\/api\/uploads\/([^/]+)\/([^/]+)$/);
+      if (uploadMatch && request.method === "POST") {
+        return await handleUpload(uploadMatch[1], uploadMatch[2], request, env, cors);
+      }
+
+      const contentAssetMatch = url.pathname.match(/^\/api\/content-assets\/([^/]+)\/(.+)$/);
+      if (contentAssetMatch && request.method === "GET") {
+        return await handleContentAsset(contentAssetMatch[1], contentAssetMatch[2], request, env, cors);
       }
 
       if (url.pathname.startsWith("/api/")) {
@@ -118,9 +144,122 @@ async function handleProjectAsset(rawRealm, rawPath, request, env, cors) {
   return new Response(response.body, { status: response.status, headers });
 }
 
-async function readJson(request) {
+async function handleDiscussion(rawRealm, rawDocId, request, env, cors) {
+  const realm = normalizeRealm(rawRealm);
+  const gate = await requireRealmAccess(realm, request, env);
+  if (!gate.ok) return json({ ok: false, error: gate.error }, cors, gate.status);
+
+  const docId = sanitizeDocId(rawDocId);
+  if (!docId) return json({ ok: false, error: "invalid doc id" }, cors, 400);
+
+  const persisted = Boolean(contentStore(env));
+  const current = await readDiscussion(env, realm, docId);
+  if (request.method === "GET") return json({ ok: true, persisted, ...current }, cors);
+
+  const body = await readJson(request);
+  const kind = String(body.kind || "").trim();
+  const item = sanitizeDiscussionItem(kind, body);
+  if (!item) return json({ ok: false, error: "invalid discussion item" }, cors, 400);
+
+  if (kind === "annotation") {
+    current.annotations.unshift(item);
+  } else if (kind === "reply") {
+    const target = current.comments.find((comment) => comment.id === item.parentId);
+    if (!target) return json({ ok: false, error: "parent comment not found" }, cors, 404);
+    target.replies = Array.isArray(target.replies) ? target.replies : [];
+    target.replies.push(item);
+  } else {
+    current.comments.unshift(item);
+  }
+  current.comments = current.comments.slice(0, 200);
+  current.annotations = current.annotations.slice(0, 200);
+  await writeDiscussion(env, realm, docId, current);
+  return json({ ok: true, persisted, ...current }, cors);
+}
+
+async function handleProjectOverlays(rawRealm, request, env, cors) {
+  const realm = normalizeRealm(rawRealm);
+  const gate = await requireRealmAccess(realm, request, env);
+  if (!gate.ok) return json({ ok: false, error: gate.error }, cors, gate.status);
+  const docs = await readProjectOverlays(env, realm);
+  return json({ ok: true, persisted: Boolean(contentStore(env)), docs }, cors);
+}
+
+async function handleDocOverlay(rawRealm, rawDocId, request, env, cors) {
+  const realm = normalizeRealm(rawRealm);
+  const gate = await requireRealmAccess(realm, request, env);
+  if (!gate.ok) return json({ ok: false, error: gate.error }, cors, gate.status);
+  const docId = sanitizeDocId(rawDocId);
+  if (!docId) return json({ ok: false, error: "invalid doc id" }, cors, 400);
+  if (!contentStore(env)) return json({ ok: false, error: "content storage not configured" }, cors, 503);
+  const body = await readJson(request, MAX_JSON_BYTES);
+  const text = String(body.body || "").replace(/\r\n/g, "\n");
+  if (!text.trim() || text.length > MAX_JSON_BYTES) {
+    return json({ ok: false, error: "invalid body" }, cors, 400);
+  }
+  const overlay = {
+    body: text,
+    updatedAt: new Date().toISOString(),
+    updatedBy: "admin",
+  };
+  await contentStore(env).put(overlayKey(realm, docId), JSON.stringify(overlay));
+  const projectDocs = await readProjectOverlays(env, realm);
+  projectDocs[docId] = overlay;
+  await contentStore(env).put(projectOverlayIndexKey(realm), JSON.stringify(projectDocs));
+  return json({ ok: true, persisted: true, ...overlay }, cors);
+}
+
+async function handleUpload(rawRealm, rawDocId, request, env, cors) {
+  const realm = normalizeRealm(rawRealm);
+  const gate = await requireRealmAccess(realm, request, env);
+  if (!gate.ok) return json({ ok: false, error: gate.error }, cors, gate.status);
+  const docId = sanitizeDocId(rawDocId);
+  if (!docId) return json({ ok: false, error: "invalid doc id" }, cors, 400);
+  if (!contentStore(env)) return json({ ok: false, error: "content storage not configured" }, cors, 503);
+
+  const form = await request.formData();
+  const file = form.get("file");
+  if (!(file instanceof File)) return json({ ok: false, error: "missing file" }, cors, 400);
+  if (!file.type.startsWith("image/") || file.size > MAX_UPLOAD_BYTES) {
+    return json({ ok: false, error: "invalid image" }, cors, 400);
+  }
+  const ext = safeImageExtension(file.name, file.type);
+  const id = crypto.randomUUID();
+  const key = uploadKey(realm, docId, `${id}.${ext}`);
+  await contentStore(env).put(key, await file.arrayBuffer(), {
+    metadata: {
+      contentType: file.type,
+      name: clampText(file.name, 160),
+      uploadedAt: new Date().toISOString(),
+    },
+  });
+  return json({
+    ok: true,
+    persisted: true,
+    name: clampText(file.name, 160),
+    url: `/api/content-assets/${encodeURIComponent(realm)}/${encodeURIComponent(docId)}/${encodeURIComponent(`${id}.${ext}`)}`,
+  }, cors);
+}
+
+async function handleContentAsset(rawRealm, rawPath, request, env, cors) {
+  const realm = normalizeRealm(rawRealm);
+  const gate = await requireRealmAccess(realm, request, env);
+  if (!gate.ok) return json({ ok: false, error: gate.error }, cors, gate.status);
+  if (!contentStore(env)) return json({ ok: false, error: "not found" }, cors, 404);
+  const parts = sanitizeUploadPath(rawPath);
+  if (!parts) return json({ ok: false, error: "invalid asset path" }, cors, 400);
+  const key = uploadKey(realm, parts.docId, parts.fileName);
+  const value = await contentStore(env).getWithMetadata(key, "arrayBuffer");
+  if (!value?.value) return json({ ok: false, error: "not found" }, cors, 404);
+  const headers = new Headers(cors);
+  headers.set("Content-Type", value.metadata?.contentType || "application/octet-stream");
+  headers.set("Cache-Control", "private, max-age=300");
+  return new Response(value.value, { headers });
+}
+
+async function readJson(request, maxBytes = 4096) {
   const len = Number(request.headers.get("content-length") || "0");
-  if (len > MAX_JSON_BYTES) throw new Error("request too large");
+  if (len > maxBytes) throw new Error("request too large");
   return request.json().catch(() => ({}));
 }
 
@@ -138,6 +277,125 @@ function sanitizeAssetPath(rawPath) {
   const parts = decoded.split("/").filter(Boolean);
   if (!parts.length || parts.some((part) => part === "." || part === ".." || part.includes("\\"))) return "";
   return parts.map(encodeURIComponent).join("/");
+}
+
+function sanitizeDocId(rawDocId) {
+  let decoded = "";
+  try {
+    decoded = decodeURIComponent(String(rawDocId || ""));
+  } catch (_error) {
+    return "";
+  }
+  return /^[\w\u4e00-\u9fff.-]{1,160}$/.test(decoded) ? decoded : "";
+}
+
+function sanitizeDiscussionItem(kind, body) {
+  if (kind !== "comment" && kind !== "annotation" && kind !== "reply") return null;
+  const text = clampText(body.text, 1200);
+  if (!text) return null;
+  const item = {
+    id: clampText(body.id, 80) || crypto.randomUUID(),
+    author: "访客",
+    text,
+    createdAt: clampText(body.createdAt, 40) || new Date().toISOString(),
+  };
+  if (kind === "annotation") {
+    const quote = clampText(body.quote, 320);
+    if (!quote) return null;
+    item.quote = quote;
+  }
+  if (kind === "reply") {
+    const parentId = clampText(body.parentId, 80);
+    if (!parentId) return null;
+    item.parentId = parentId;
+  }
+  return item;
+}
+
+function clampText(value, maxLength) {
+  return String(value || "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+async function readDiscussion(env, realm, docId) {
+  const empty = { comments: [], annotations: [] };
+  const store = contentStore(env);
+  if (!store) return empty;
+  const value = await store.get(discussionKey(realm, docId), "json");
+  if (!value || typeof value !== "object") return empty;
+  return {
+    comments: Array.isArray(value.comments) ? value.comments : [],
+    annotations: Array.isArray(value.annotations) ? value.annotations : [],
+  };
+}
+
+async function writeDiscussion(env, realm, docId, value) {
+  const store = contentStore(env);
+  if (!store) return;
+  await store.put(discussionKey(realm, docId), JSON.stringify(value));
+}
+
+function discussionKey(realm, docId) {
+  return `discussion:${realm}:${docId}`;
+}
+
+async function readProjectOverlays(env, realm) {
+  const store = contentStore(env);
+  if (!store) return {};
+  const value = await store.get(projectOverlayIndexKey(realm), "json");
+  return value && typeof value === "object" ? value : {};
+}
+
+function projectOverlayIndexKey(realm) {
+  return `doc-overlays:${realm}`;
+}
+
+function overlayKey(realm, docId) {
+  return `doc-overlay:${realm}:${docId}`;
+}
+
+function uploadKey(realm, docId, fileName) {
+  return `upload:${realm}:${docId}:${fileName}`;
+}
+
+function contentStore(env) {
+  return env.RELUMEOW_CONTENT || env.RELUMEOW_DISCUSSIONS || null;
+}
+
+async function requireRealmAccess(realm, request, env) {
+  if (!REALMS[realm]) return { ok: false, error: "invalid realm", status: 400 };
+  const result = await verifyTokenForRealm(bearerToken(request), realm, env);
+  if (!result.ok) return { ok: false, error: result.error, status: 401 };
+  return { ok: true };
+}
+
+function safeImageExtension(name, type) {
+  const ext = String(name || "").split(".").pop()?.toLowerCase() || "";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return ext === "jpeg" ? "jpg" : ext;
+  if (type === "image/png") return "png";
+  if (type === "image/jpeg") return "jpg";
+  if (type === "image/gif") return "gif";
+  if (type === "image/webp") return "webp";
+  if (type === "image/svg+xml") return "svg";
+  return "bin";
+}
+
+function sanitizeUploadPath(rawPath) {
+  let decoded = "";
+  try {
+    decoded = decodeURIComponent(String(rawPath || ""));
+  } catch (_error) {
+    return null;
+  }
+  const parts = decoded.split("/").filter(Boolean);
+  if (parts.length !== 2) return null;
+  const docId = sanitizeDocId(parts[0]);
+  const fileName = parts[1];
+  if (!docId || !/^[\w.-]{1,220}$/.test(fileName)) return null;
+  return { docId, fileName };
 }
 
 async function verifyPasscodeHash(passcode, expectedHash, env) {

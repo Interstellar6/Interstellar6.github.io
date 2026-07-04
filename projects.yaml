@@ -26,8 +26,16 @@ projects:
     navigation:
       directory_overview: overview.md
       hide_overview_from_child_list: true
+      directory_order:
+        - research-catalog
+        - progress
+        - project-docs
+      directory_labels:
+        research-catalog: 调研文档目录
+        progress: 项目进度文档目录
+        project-docs: 项目运行文档目录
     pinned_docs:
-      - overview.md
+      - README.md
       - project-docs/overview.md
       - research-catalog/overview.md
       - progress/overview.md
@@ -88,8 +96,18 @@ projects:
     navigation:
       directory_overview: overview.md
       hide_overview_from_child_list: true
+      directory_order:
+        - contest-analysis
+        - research-catalog
+        - progress
+        - project-docs
+      directory_labels:
+        contest-analysis: 赛题分析目录
+        research-catalog: 调研文档目录
+        progress: 项目进度文档目录
+        project-docs: 项目运行文档目录
     pinned_docs:
-      - overview.md
+      - README.md
       - contest-analysis/overview.md
       - research-catalog/overview.md
       - progress/overview.md

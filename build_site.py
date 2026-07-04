@@ -163,12 +163,43 @@ def shell_project(project: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def should_collect(relative: Path, overview_name: str) -> bool:
+def should_collect(relative: Path, overview_name: str, docs_root: Path) -> bool:
     name = relative.name
+    root_readme = docs_root / "README.md"
+    if relative == Path("README.md"):
+        return True
+    if relative == Path(overview_name) and root_readme.exists():
+        return False
     if name == "README.md":
-        sibling = relative.with_name(overview_name)
+        sibling = docs_root / relative.with_name(overview_name)
         return not sibling.exists()
     return True
+
+
+def stage_image_for_doc(project: dict[str, Any], project_path: str) -> str:
+    parts = project_path.split("/")
+    if len(parts) < 3 or parts[0] != str(project.get("catalog", {}).get("root", "research-catalog/")).strip("/"):
+        return ""
+    stage_key = parts[1]
+    for stage in project.get("catalog", {}).get("stages", []):
+        if str(stage.get("key")) == stage_key:
+            return str(stage.get("image") or stage.get("source_image") or "").strip()
+    return ""
+
+
+def prepend_lead_image_if_missing(project: dict[str, Any], docs_root: Path, path: Path, title: str, body: str) -> str:
+    if re.search(r"!\[[^\]]*\]\([^)]+\)|!\[\[[^\]]+\]\]", body):
+        return body
+    relative = path.relative_to(docs_root)
+    image = stage_image_for_doc(project, str(relative).replace("\\", "/"))
+    if not image:
+        return body
+    image_src = (docs_root / image).resolve()
+    if not image_src.exists() or not image_src.is_file():
+        return body
+    rel = os.path.relpath(image_src, path.parent).replace("\\", "/")
+    caption = f"{title} 在项目 pipeline 中的位置"
+    return f"![{title}]({rel} \"{caption}\")\n\n{body}"
 
 
 def copy_local_assets(
@@ -230,7 +261,7 @@ def load_doc(
     relative = path.relative_to(docs_root)
     project_path = str(relative).replace("\\", "/")
     overview_name = project.get("navigation", {}).get("directory_overview", "overview.md")
-    is_overview = relative.name == overview_name
+    is_overview = relative.name == overview_name or relative == Path("README.md")
     fallback = "Overview" if is_overview else relative.stem.replace("-", " ").replace("_", " ")
     title = str(meta.get("title") or extract_title(body, fallback)).strip()
     doc_id = slugify(str(meta.get("id") or f"{project['slug']}-{project_path.removesuffix('.md')}"), "doc")
@@ -240,9 +271,10 @@ def load_doc(
         doc_id = f"{base_id}-{index}"
         index += 1
     used_ids.add(doc_id)
-    category = str(meta.get("category") or ("总目录" if project_path == overview_name else "项目文档")).strip()
+    category = str(meta.get("category") or ("总目录" if relative.parent == Path(".") and is_overview else "项目文档")).strip()
     doc_type = str(meta.get("doc_type") or ("overview" if is_overview else "doc")).strip()
     visibility = normalize_visibility(meta, project_path)
+    body = prepend_lead_image_if_missing(project, docs_root, path, title, body)
     if visibility == "public":
         if is_protected(project):
             realm = access_realm(project)
@@ -285,19 +317,18 @@ def collect_docs(project: dict[str, Any], route_dir: Path, protected_asset_prefi
     used_ids: set[str] = set()
     docs: list[Doc] = []
     seen: set[Path] = set()
+    overview_name = project.get("navigation", {}).get("directory_overview", "overview.md")
     for item in project.get("pinned_docs", []):
         path = docs_root / item
-        if path.exists() and path.is_file():
+        rel = path.relative_to(docs_root) if path.exists() else Path(item)
+        if path.exists() and path.is_file() and should_collect(rel, overview_name, docs_root):
             docs.append(load_doc(project, path, docs_root, used_ids, route_dir, protected_asset_prefix))
             seen.add(path.resolve())
-    overview_name = project.get("navigation", {}).get("directory_overview", "overview.md")
     for path in sorted(docs_root.rglob("*.md")):
         if path.resolve() in seen:
             continue
         rel = path.relative_to(docs_root)
-        if rel.name == "README.md" and (path.parent / overview_name).exists():
-            continue
-        if should_collect(rel, overview_name):
+        if should_collect(rel, overview_name, docs_root):
             docs.append(load_doc(project, path, docs_root, used_ids, route_dir, protected_asset_prefix))
     return docs
 
@@ -314,13 +345,23 @@ def build_directory_tree(project: dict[str, Any], docs: list[Doc]) -> list[dict[
         for i in range(1, len(parts) + 1):
             directories.add("/".join(parts[:i]))
 
+    nav = project.get("navigation", {})
+    labels = nav.get("directory_labels", {}) if isinstance(nav.get("directory_labels"), dict) else {}
+    order = nav.get("directory_order", []) if isinstance(nav.get("directory_order"), list) else []
+    order_index = {str(item).strip("/"): index for index, item in enumerate(order)}
+
     def label_for(path: str) -> str:
         if not path:
             return project["title"]
+        if path in labels:
+            return str(labels[path])
         overview = overview_by_dir.get(path)
         if overview:
             return overview.title.replace(" Overview", "")
         return path.rsplit("/", 1)[-1].replace("-", " ").title()
+
+    def sort_dir(path: str) -> tuple[int, str]:
+        return (order_index.get(path, 1000), label_for(path))
 
     def node(path: str) -> dict[str, Any]:
         children = []
@@ -328,7 +369,7 @@ def build_directory_tree(project: dict[str, Any], docs: list[Doc]) -> list[dict[
         direct_dirs = sorted({
             item for item in directories
             if item and item.startswith(prefix) and "/" not in item[len(prefix):]
-        })
+        }, key=sort_dir)
         for child in direct_dirs:
             children.append(node(child))
         for doc in sorted(child_docs.get(path, []), key=lambda item: item.title):

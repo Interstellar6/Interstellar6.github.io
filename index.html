@@ -1,14 +1,27 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>relumeow.top</title>
     <meta name="description" content="多项目文档、调研和运行记录的统一入口。" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" crossorigin="anonymous" />
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("relumeow-theme-v1");
+        document.documentElement.dataset.theme = savedTheme === "light" ? "light" : "dark";
+      } catch (_error) {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="workspace-shell">
+      <button id="railToggle" class="rail-toggle" type="button" aria-label="隐藏目录" aria-pressed="false">
+        <span aria-hidden="true"></span>
+      </button>
       <aside class="project-rail" aria-label="项目文档目录">
         <a class="site-brand" href="/home/" aria-label="relumeow.top home">
           <span class="site-wordmark">relumeow.top</span>
@@ -20,6 +33,7 @@
           <nav id="directoryTree" class="directory-tree"></nav>
         </section>
       </aside>
+      <div id="railResizer" class="rail-resizer" role="separator" aria-label="调整目录宽度" aria-orientation="vertical" tabindex="0"></div>
 
       <main class="content-shell">
         <header class="content-topbar">
@@ -32,6 +46,10 @@
               <input id="searchInput" type="search" placeholder="Search docs" />
               <span>⌘K</span>
             </div>
+            <button id="themeToggle" class="theme-button" type="button" aria-label="切换白天模式">
+              <span class="theme-icon" aria-hidden="true"></span>
+              <span id="themeLabel">白天</span>
+            </button>
             <div class="account-menu">
               <button id="accountButton" class="account-button" type="button" aria-haspopup="dialog" aria-expanded="false">
                 <span id="accountAvatar" class="account-avatar">访</span>
@@ -50,6 +68,7 @@
         <section id="adminView" class="admin-view" hidden></section>
       </main>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js" crossorigin="anonymous"></script>
     <script src="./site-data.js"></script>
     <script src="./app.js"></script>
   </body>
