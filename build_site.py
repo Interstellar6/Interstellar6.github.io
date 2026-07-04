@@ -359,7 +359,7 @@ def doc_to_public_dict(doc: Doc, include_body: bool) -> dict[str, Any]:
 
 
 def copy_shell_files(target: Path) -> None:
-    for name in ("index.html", "app.js", "styles.css", "theme.js", "CNAME", ".nojekyll"):
+    for name in ("index.html", "app.js", "styles.css", "theme.js"):
         src = ROOT / name
         if src.exists():
             if name == "index.html":
