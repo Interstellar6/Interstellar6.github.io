@@ -1,44 +1,38 @@
 (function () {
-  const seed = window.V2M_BLOG_DATA || { docs: [], categories: [], generatedAt: "" };
-  const DRAFT_STORAGE_KEY = "v2m-blog-drafts-v1";
-  const baseDocs = (seed.docs || []).map(cloneDoc);
-  let docs = baseDocs.map(cloneDoc);
-  let uploadedDocs = [];
-  let draftStore = loadDraftStore();
-  let activeCategory = "All";
-  let sortMode = "recent";
-  let currentDocId = "";
-  let pendingEditorDocId = "";
+  const seed = window.RELUMEOW_DATA || {};
+  const site = seed.site || {};
+  const project = seed.project || null;
+  let docs = Array.isArray(seed.docs) ? seed.docs : [];
+  const projects = Array.isArray(seed.projects) ? seed.projects : (project ? [projectSummary(project, docs)] : []);
+  let tree = Array.isArray(seed.tree) ? seed.tree : [];
+  const configuredApiUrl = String(site.access_api_url || "").trim();
+  const API_URL = (configuredApiUrl === "same-origin"
+    ? window.location.origin
+    : (configuredApiUrl || site.api_url || window.location.origin)
+  ).replace(/\/+$/, "");
+  const ACCESS_KEY = "relumeow-access-v1";
+
+  let activeDocId = "";
+  let activeQuery = "";
+  let accessState = { checked: false, allowed: false, reason: "" };
+  let protectedDataLoaded = !seed.protected;
+  let pendingLoginRoute = "";
 
   const $ = (id) => document.getElementById(id);
   const els = {
-    categoryNav: $("categoryNav"),
-    categoryChips: $("categoryChips"),
-    docGrid: $("docGrid"),
+    directoryTree: $("directoryTree"),
+    routeLabel: $("routeLabel"),
+    pageTitle: $("pageTitle"),
     searchInput: $("searchInput"),
-    clearSearch: $("clearSearch"),
-    buildMeta: $("buildMeta"),
     homeView: $("homeView"),
-    articleView: $("articleView"),
-    articleBody: $("articleBody"),
-    articleMeta: $("articleMeta"),
-    tocNav: $("tocNav"),
-    relatedDocs: $("relatedDocs"),
-    backHome: $("backHome"),
-    uploadInput: $("uploadInput"),
-    uploadList: $("uploadList"),
-    sortRecent: $("sortRecent"),
-    sortTitle: $("sortTitle"),
-    newDraft: $("newDraft"),
-    editDoc: $("editDoc"),
-    downloadDoc: $("downloadDoc"),
-    discardDraft: $("discardDraft"),
-    draftStatus: $("draftStatus"),
-    editorPanel: $("editorPanel"),
-    markdownEditor: $("markdownEditor"),
-    editorPreview: $("editorPreview"),
-    saveDraft: $("saveDraft"),
-    closeEditor: $("closeEditor"),
+    projectView: $("projectView"),
+    loginView: $("loginView"),
+    adminView: $("adminView"),
+    documentPanel: $("documentPanel"),
+    accountButton: $("accountButton"),
+    accountAvatar: $("accountAvatar"),
+    accountLabel: $("accountLabel"),
+    accountPopover: $("accountPopover"),
   };
 
   const escapeHtml = (value) => String(value ?? "")
@@ -47,6 +41,15 @@
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+
+  const stripMarkdown = (value) => String(value || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#>*_\-|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   const slugify = (value) => {
     const slug = String(value || "")
@@ -58,90 +61,403 @@
     return slug || "section";
   };
 
-  const stripMarkdown = (value) => String(value || "")
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[#>*_\-|]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  function categories() {
-    const list = ["All", ...Array.from(new Set(docs.map((doc) => doc.category || "Notes"))).sort()];
-    return list;
+  function currentPath() {
+    const path = window.location.pathname.replace(/\/+$/, "/");
+    if (path === "/") return "/home/";
+    return path;
   }
 
-  function countFor(category) {
-    return category === "All" ? docs.length : docs.filter((doc) => doc.category === category).length;
+  function projectSummary(item, projectDocs) {
+    return {
+      slug: item.slug,
+      route: item.route,
+      title: item.title,
+      brand: item.brand || item.title,
+      mark: item.mark || String(item.title || "P").slice(0, 3),
+      subtitle: item.subtitle || "",
+      description: item.description || "",
+      access: item.access || {},
+      doc_count: item.doc_count ?? projectDocs.length,
+      overview_id: item.overview_id || projectDocs.find((doc) => doc.is_overview && !doc.directory)?.id || projectDocs[0]?.id || "",
+      updated: item.updated || projectDocs.reduce((max, doc) => String(doc.updated || "") > max ? doc.updated : max, ""),
+    };
   }
 
-  function renderNavigation() {
-    const nav = categories().map((category) => `
-      <button class="nav-item ${category === activeCategory ? "active" : ""}" data-category="${escapeHtml(category)}" type="button">
-        <span>${escapeHtml(category)}</span><span>${countFor(category)}</span>
-      </button>
-    `).join("");
-    els.categoryNav.innerHTML = nav;
-    els.categoryChips.innerHTML = categories().map((category) => `
-      <button class="chip ${category === activeCategory ? "active" : ""}" data-category="${escapeHtml(category)}" type="button">
-        ${escapeHtml(category)} · ${countFor(category)}
-      </button>
-    `).join("");
-    document.querySelectorAll("[data-category]").forEach((button) => {
-      button.addEventListener("click", () => {
-        activeCategory = button.dataset.category || "All";
-        renderAll();
-      });
-    });
-  }
-
-  function filteredDocs() {
-    const query = els.searchInput.value.trim().toLowerCase();
-    let list = docs.filter((doc) => activeCategory === "All" || doc.category === activeCategory);
-    if (query) {
-      list = list.filter((doc) => {
-        const haystack = [doc.title, doc.summary, doc.category, (doc.tags || []).join(" "), stripMarkdown(doc.body)].join(" ").toLowerCase();
-        return haystack.includes(query);
-      });
+  function storedAccess(realm) {
+    try {
+      const all = JSON.parse(localStorage.getItem(ACCESS_KEY) || "{}");
+      return all[realm] || null;
+    } catch (_error) {
+      return null;
     }
-    list.sort((a, b) => {
-      if (sortMode === "title") return a.title.localeCompare(b.title, "zh-Hans-CN");
-      return String(b.updated).localeCompare(String(a.updated)) || a.title.localeCompare(b.title, "zh-Hans-CN");
-    });
-    return list;
   }
 
-  function renderDocGrid() {
-    const list = filteredDocs();
-    if (!list.length) {
-      els.docGrid.innerHTML = `<div class="empty-state">没有匹配的文档。换个关键词，或者上传一个新的 Markdown 试试。</div>`;
+  function saveAccess(realm, token, expiresAt) {
+    try {
+      const all = JSON.parse(localStorage.getItem(ACCESS_KEY) || "{}");
+      all[realm] = { token, expiresAt };
+      localStorage.setItem(ACCESS_KEY, JSON.stringify(all));
+    } catch (_error) {
+      // Access can still work for the current response; persistence is best-effort.
+    }
+  }
+
+  function accessEntries() {
+    return projects
+      .map((item) => {
+        const realm = item.access?.realm || item.slug;
+        const stored = storedAccess(realm);
+        return stored?.token ? { project: item, realm, ...stored } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function primaryAccessEntry() {
+    if (project) {
+      const realm = project.access?.realm || project.slug;
+      const stored = storedAccess(realm);
+      if (stored?.token) return { project, realm, ...stored };
+    }
+    return accessEntries()[0] || null;
+  }
+
+  function clearAccess(realm) {
+    try {
+      const all = JSON.parse(localStorage.getItem(ACCESS_KEY) || "{}");
+      if (realm) delete all[realm];
+      else Object.keys(all).forEach((key) => delete all[key]);
+      localStorage.setItem(ACCESS_KEY, JSON.stringify(all));
+    } catch (_error) {
+      localStorage.removeItem(ACCESS_KEY);
+    }
+  }
+
+  async function verifyAccess() {
+    if (!project || project.access?.mode === "public") {
+      accessState = { checked: true, allowed: true, reason: "public" };
+      return accessState;
+    }
+    const realm = project.access?.realm || project.slug;
+    const stored = storedAccess(realm);
+    if (!stored?.token) {
+      accessState = { checked: true, allowed: false, reason: "missing-token" };
+      return accessState;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/access/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ realm, token: stored.token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      accessState = { checked: true, allowed: Boolean(res.ok && data.ok), reason: data.error || "" };
+    } catch (error) {
+      accessState = { checked: true, allowed: false, reason: error.message || "verify failed" };
+    }
+    return accessState;
+  }
+
+  async function loadProtectedProjectData() {
+    if (!project || !seed.protected || protectedDataLoaded) return;
+    const realm = project.access?.realm || project.slug;
+    const stored = storedAccess(realm);
+    if (!stored?.token) throw new Error("missing access token");
+    const res = await fetch(`${API_URL}/api/projects/${encodeURIComponent(realm)}/data`, {
+      headers: { Authorization: `Bearer ${stored.token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || "项目文档加载失败");
+    docs = Array.isArray(data.docs) ? data.docs : [];
+    tree = Array.isArray(data.tree) ? data.tree : [];
+    protectedDataLoaded = true;
+  }
+
+  async function submitPasscode(realm, passcode, stayRoute) {
+    const res = await fetch(`${API_URL}/api/access/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ realm, passcode }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok || !data.token) throw new Error(data.error || "口令验证失败");
+    saveAccess(realm, data.token, data.expires_at || "");
+    if (stayRoute) window.location.href = stayRoute;
+    else window.location.reload();
+  }
+
+  function setVisible(view) {
+    document.body.dataset.view = view;
+    els.homeView.hidden = view !== "home";
+    els.projectView.hidden = view !== "project";
+    els.loginView.hidden = view !== "login";
+    els.adminView.hidden = view !== "admin";
+  }
+
+  function renderDirectoryTree() {
+    if (!project || !tree.length) {
+      els.directoryTree.innerHTML = `
+        <a class="home-rail-link" href="/home/">
+          <span>⌂</span>
+          <strong>Home</strong>
+        </a>
+        <span class="muted-note">项目入口集中在 Home。</span>
+      `;
       return;
     }
-    els.docGrid.innerHTML = list.map((doc) => `
-      <a class="doc-card" href="#/doc/${encodeURIComponent(doc.id)}">
-        <header><span>${escapeHtml(doc.category)}</span><span>${escapeHtml(doc.updated)} · ${doc.reading_minutes || 1} min</span></header>
-        <h2>${escapeHtml(doc.title)}</h2>
-        <p>${escapeHtml(doc.summary || "暂无摘要。")}</p>
-        <div class="doc-tags">${(doc.tags || []).slice(0, 4).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+    els.directoryTree.innerHTML = `
+      <a class="home-rail-link" href="/home/">
+        <span>⌂</span>
+        <strong>Home</strong>
       </a>
-    `).join("");
+      ${tree.map((node) => renderTreeNode(node, 0)).join("")}
+    `;
+    els.directoryTree.querySelectorAll("[data-doc-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        showDoc(button.dataset.docId || "");
+      });
+    });
   }
 
-  function preprocessMarkdown(markdown) {
-    return String(markdown || "")
-      .replace(/\r\n/g, "\n")
-      .replace(/:::details\s*(.*?)\n([\s\S]*?)\n:::/g, (_m, title, body) => `<details><summary>${escapeHtml(title || "Details")}</summary>\n\n${body}\n\n</details>`)
-      .replace(/!\[\[([^\]]+)\]\]/g, (_m, target) => `![${target}](${target})`)
-      .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (_m, target, label) => obsidianLink(target, label))
-      .replace(/\[\[([^\]]+)\]\]/g, (_m, target) => obsidianLink(target, target));
+  function renderTreeNode(node, depth) {
+    if (node.type === "doc") {
+      return `<button class="tree-doc ${activeDocId === node.id ? "active" : ""}" data-doc-id="${escapeHtml(node.id)}" style="--depth:${depth}" type="button">
+        <span>□</span>${escapeHtml(node.title)}
+      </button>`;
+    }
+    const overviewId = node.overview_id || "";
+    const children = (node.children || []).map((child) => renderTreeNode(child, depth + 1)).join("");
+    return `<div class="tree-group" style="--depth:${depth}">
+      <button class="tree-directory ${activeDocId === overviewId ? "active" : ""}" ${overviewId ? `data-doc-id="${escapeHtml(overviewId)}"` : ""} type="button">
+        <span>${depth ? "▸" : "▾"}</span>${escapeHtml(node.title)}
+      </button>
+      <div class="tree-children">${children}</div>
+    </div>`;
   }
 
-  function obsidianLink(target, label) {
-    const clean = String(target).trim();
-    const match = docs.find((doc) => doc.title === clean || doc.id === slugify(clean) || doc.source_path?.endsWith(clean));
-    if (match) return `<a href="#/doc/${encodeURIComponent(match.id)}">${escapeHtml(label)}</a>`;
-    return `<span title="未找到匹配文档" style="color: var(--amber);">${escapeHtml(label)}</span>`;
+  function renderAccount() {
+    const entry = primaryAccessEntry();
+    const signedIn = Boolean(entry);
+    els.accountAvatar.textContent = signedIn ? (entry.project.mark || "管") : "访";
+    els.accountLabel.textContent = signedIn ? "已登录" : "访客";
+    els.accountButton.classList.toggle("signed-in", signedIn);
+    if (!els.accountPopover.hidden) renderAccountPopover();
+  }
+
+  function openAccountPopover(route = "") {
+    pendingLoginRoute = route || pendingLoginRoute;
+    els.accountPopover.hidden = false;
+    els.accountButton.setAttribute("aria-expanded", "true");
+    renderAccountPopover();
+  }
+
+  function closeAccountPopover() {
+    els.accountPopover.hidden = true;
+    els.accountButton.setAttribute("aria-expanded", "false");
+  }
+
+  function renderAccountPopover() {
+    const entries = accessEntries();
+    if (!entries.length) {
+      renderAccountLogin();
+      return;
+    }
+    renderAdminPopover(entries);
+  }
+
+  function renderAccountLogin() {
+    const projectOptions = projects.map((item) => `<option value="${escapeHtml(item.access?.realm || item.slug)}" data-route="${escapeHtml(item.route)}">${escapeHtml(item.title)}</option>`).join("");
+    els.accountPopover.innerHTML = `
+      <form class="account-login" id="accountLoginForm">
+        <h2>访客登录</h2>
+        <p>输入项目口令以浏览受保护的项目空间。口令只发送到后台验证。</p>
+        <label>
+          <span>项目空间</span>
+          <select name="realm">${projectOptions}</select>
+        </label>
+        <label>
+          <span>口令</span>
+          <input name="passcode" type="password" autocomplete="current-password" placeholder="Enter project passcode" required />
+        </label>
+        <button type="submit">进入项目</button>
+        <p class="form-status" id="accountLoginStatus"></p>
+      </form>
+    `;
+    bindAccountLoginForm();
+  }
+
+  function renderAdminPopover(entries) {
+    const active = primaryAccessEntry() || entries[0];
+    els.accountPopover.innerHTML = `
+      <section class="admin-card compact">
+        <div class="admin-head">
+          <span class="account-avatar signed-in">${escapeHtml(active.project.mark || "管")}</span>
+          <span>
+            <strong>${escapeHtml(active.project.title)}</strong>
+            <em>管理员会话已验证</em>
+          </span>
+        </div>
+        <p>管理端属于中央站点公共能力：项目接入走 projects.yaml，访问控制走后台 Worker secrets，部署走中心仓库构建产物。</p>
+        <div class="admin-actions">
+          <a class="open-button" href="${escapeHtml(active.project.route)}">打开项目</a>
+          <a class="ghost-button" href="${escapeHtml(API_URL)}/api/health">API health</a>
+          <button class="ghost-button" id="logoutButton" type="button">退出全部</button>
+        </div>
+      </section>
+    `;
+    $("logoutButton")?.addEventListener("click", () => {
+      clearAccess();
+      closeAccountPopover();
+      renderAccount();
+      if (project) window.location.reload();
+    });
+  }
+
+  function bindAccountLoginForm() {
+    const form = $("accountLoginForm");
+    if (!form) return;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = $("accountLoginStatus");
+      const data = new FormData(form);
+      const realm = String(data.get("realm") || "");
+      const passcode = String(data.get("passcode") || "");
+      const option = Array.from(form.elements.realm.options).find((item) => item.value === realm);
+      const target = pendingLoginRoute || option?.dataset.route || "/home/";
+      status.textContent = "验证中...";
+      try {
+        await submitPasscode(realm, passcode, target);
+      } catch (error) {
+        status.textContent = error.message || "验证失败";
+      }
+    });
+  }
+
+  function renderHome() {
+    setVisible("home");
+    els.routeLabel.textContent = "Home";
+    els.pageTitle.textContent = "Project spaces";
+    els.homeView.innerHTML = `
+      <section class="home-hero">
+        <div>
+          <h2>relumeow.top</h2>
+          <p>统一管理项目文档、调研目录、实验进度和管理端入口。项目知识留在各自仓库，中央站点只负责聚合、导航、权限和发布。</p>
+        </div>
+        <div class="hero-proof">
+          <strong>Manifest driven</strong>
+          <span>projects.yaml → route → source docs → unified shell</span>
+        </div>
+      </section>
+      <section class="project-table">
+        ${projects.map((item) => `
+          <article class="project-card">
+            <span class="project-mark large">${escapeHtml(item.mark || item.title.slice(0, 2))}</span>
+            <div>
+              <h3>${escapeHtml(item.title)}</h3>
+              <p>${escapeHtml(item.description || "")}</p>
+              <div class="project-meta">
+                <span>${item.doc_count || 0} docs</span>
+                <span>${item.access?.mode === "passcode" ? "Protected by server-side access" : "Public"}</span>
+              </div>
+            </div>
+            <a class="open-button" href="${escapeHtml(item.route)}">Open</a>
+          </article>
+        `).join("")}
+      </section>
+      <section class="workspace-preview">
+        <h3>Overview opens by default</h3>
+        <p>目录节点不再把 README 当作普通条目重复列出。点击目录时，正文区域显示该目录的 overview 文档，子文档由目录树管理。</p>
+      </section>
+    `;
+    renderAccount();
+  }
+
+  function renderLogin(route = "") {
+    pendingLoginRoute = route || "";
+    setVisible("home");
+    renderHome();
+    openAccountPopover(route);
+  }
+
+  function renderAdmin() {
+    setVisible("home");
+    renderHome();
+    openAccountPopover();
+  }
+
+  function renderProjectLocked() {
+    setVisible("project");
+    els.routeLabel.textContent = project.title;
+    els.pageTitle.textContent = project.title;
+    els.documentPanel.innerHTML = `
+      <section class="locked-panel">
+        <div class="lock-symbol">⌕</div>
+        <h2>${escapeHtml(project.title)} requires access</h2>
+        <p>这个项目空间受后台访问控制保护。请输入正确口令后继续浏览。</p>
+        <button class="open-button" id="lockedLoginButton" type="button">访客登录</button>
+      </section>
+    `;
+    $("lockedLoginButton")?.addEventListener("click", () => openAccountPopover(project.route));
+    renderAccount();
+  }
+
+  function renderProject() {
+    setVisible("project");
+    els.routeLabel.textContent = project.title;
+    els.pageTitle.textContent = project.title;
+    const hashDoc = location.hash.match(/^#\/doc\/(.+)$/)?.[1];
+    const overview = docs.find((doc) => doc.is_overview && !doc.directory) || docs[0];
+    showDoc(hashDoc ? decodeURIComponent(hashDoc) : overview?.id || "", { skipHash: true });
+    renderAccount();
+  }
+
+  function showDoc(id, options = {}) {
+    const query = activeQuery.trim().toLowerCase();
+    let doc = docs.find((item) => item.id === id) || docs[0];
+    if (query) {
+      const hit = docs.find((item) => [item.title, item.summary, item.category, (item.tags || []).join(" "), stripMarkdown(item.body)].join(" ").toLowerCase().includes(query));
+      if (hit) doc = hit;
+    }
+    if (!doc) return;
+    activeDocId = doc.id;
+    if (!options.skipHash) history.replaceState(null, "", `${project.route}#/doc/${encodeURIComponent(doc.id)}`);
+    els.documentPanel.innerHTML = `
+      <div class="doc-meta">
+        <span>${escapeHtml(doc.category)}</span>
+        <span>${escapeHtml(doc.updated)}</span>
+        <span>${doc.reading_minutes || 1} min read</span>
+        <span>${escapeHtml(doc.project_path || "")}</span>
+      </div>
+      <div class="doc-body">${renderMarkdown(doc.body || "")}</div>
+    `;
+    hydrateProtectedImages(els.documentPanel);
+    renderDirectoryTree();
+  }
+
+  async function hydrateProtectedImages(container) {
+    if (!project || project.access?.mode !== "passcode") return;
+    const realm = project.access?.realm || project.slug;
+    const stored = storedAccess(realm);
+    if (!stored?.token) return;
+    const images = Array.from(container.querySelectorAll("img"));
+    await Promise.all(images.map(async (img) => {
+      const rawSrc = img.dataset.protectedSrc || img.getAttribute("src") || "";
+      const url = new URL(rawSrc, window.location.origin);
+      if (!url.pathname.startsWith(`/api/projects/${realm}/assets/`)) return;
+      try {
+        const res = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${stored.token}` },
+        });
+        if (!res.ok) throw new Error(`image ${res.status}`);
+        const blob = await res.blob();
+        const previous = img.dataset.objectUrl;
+        if (previous) URL.revokeObjectURL(previous);
+        const objectUrl = URL.createObjectURL(blob);
+        img.dataset.objectUrl = objectUrl;
+        img.src = objectUrl;
+      } catch (_error) {
+        img.classList.add("image-load-failed");
+      }
+    }));
   }
 
   function renderMarkdown(markdown) {
@@ -153,8 +469,6 @@
     let codeLang = "";
     let codeLines = [];
     let table = [];
-    let taskIndex = 0;
-
     const flushParagraph = () => {
       if (paragraph.length) {
         html += `<p>${inline(paragraph.join(" "))}</p>`;
@@ -162,27 +476,19 @@
       }
     };
     const closeLists = (target = 0) => {
-      while (listStack.length > target) {
-        html += `</${listStack.pop()}>`;
-      }
+      while (listStack.length > target) html += `</${listStack.pop()}>`;
     };
     const flushTable = () => {
       if (!table.length) return;
       const rows = table.map((row) => row.trim()).filter(Boolean);
       if (rows.length >= 2 && /^\|?\s*:?-{3,}/.test(rows[1])) {
         const split = (row) => row.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
-        const headers = split(rows[0]);
-        html += "<table><thead><tr>" + headers.map((cell) => `<th>${inline(cell)}</th>`).join("") + "</tr></thead><tbody>";
-        rows.slice(2).forEach((row) => {
-          html += "<tr>" + split(row).map((cell) => `<td>${inline(cell)}</td>`).join("") + "</tr>";
-        });
+        html += "<table><thead><tr>" + split(rows[0]).map((cell) => `<th>${inline(cell)}</th>`).join("") + "</tr></thead><tbody>";
+        rows.slice(2).forEach((row) => { html += "<tr>" + split(row).map((cell) => `<td>${inline(cell)}</td>`).join("") + "</tr>"; });
         html += "</tbody></table>";
-      } else {
-        html += rows.map((row) => `<p>${inline(row)}</p>`).join("");
       }
       table = [];
     };
-
     lines.forEach((line) => {
       if (line.startsWith("```")) {
         flushParagraph(); flushTable(); closeLists();
@@ -195,14 +501,9 @@
         return;
       }
       if (inCode) { codeLines.push(line); return; }
-      if (/^\s*\|/.test(line)) {
-        flushParagraph(); closeLists(); table.push(line); return;
-      }
+      if (/^\s*\|/.test(line)) { flushParagraph(); closeLists(); table.push(line); return; }
       flushTable();
       if (!line.trim()) { flushParagraph(); closeLists(); return; }
-      if (/^<details>|^<\/details>|^<summary>/.test(line.trim())) {
-        flushParagraph(); closeLists(); html += line; return;
-      }
       const heading = /^(#{1,6})\s+(.+)$/.exec(line);
       if (heading) {
         flushParagraph(); closeLists();
@@ -211,13 +512,7 @@
         html += `<h${level} id="${slugify(text)}">${inline(heading[2])}</h${level}>`;
         return;
       }
-      const quote = /^>\s?(.*)$/.exec(line);
-      if (quote) {
-        flushParagraph(); closeLists();
-        html += `<blockquote>${inline(quote[1])}</blockquote>`;
-        return;
-      }
-      const unordered = /^(\s*)[-*]\s+(\[[ xX]\]\s+)?(.+)$/.exec(line);
+      const unordered = /^(\s*)[-*]\s+(.+)$/.exec(line);
       const ordered = /^(\s*)\d+\.\s+(.+)$/.exec(line);
       if (unordered || ordered) {
         flushParagraph();
@@ -225,444 +520,103 @@
         const type = ordered ? "ol" : "ul";
         while (listStack.length > indent + 1) html += `</${listStack.pop()}>`;
         while (listStack.length < indent + 1) { listStack.push(type); html += `<${type}>`; }
-        if (listStack[listStack.length - 1] !== type) {
-          html += `</${listStack.pop()}>`;
-          listStack.push(type);
-          html += `<${type}>`;
-        }
-        if (unordered) {
-          const task = unordered[2];
-          const content = unordered[3];
-          if (task) {
-            const checked = /\[[xX]\]/.test(task);
-            html += `<li class="task-item"><label><input type="checkbox" data-task-index="${taskIndex++}" ${checked ? "checked" : ""}>${inline(content)}</label></li>`;
-          } else {
-            html += `<li>${inline(content)}</li>`;
-          }
-        } else {
-          html += `<li>${inline(ordered[2])}</li>`;
-        }
+        html += `<li>${inline(ordered ? ordered[2] : unordered[2])}</li>`;
         return;
       }
       paragraph.push(line.trim());
     });
     flushParagraph(); flushTable(); closeLists();
-    if (inCode) html += `<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`;
     return html;
+  }
+
+  function preprocessMarkdown(markdown) {
+    return String(markdown || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/!\[\[([^\]]+)\]\]/g, (_m, target) => `![${target}](${target})`);
   }
 
   function inline(value) {
     let text = escapeHtml(value);
-    const stash = [];
-    text = text.replace(/&lt;a href=&quot;([^"]+)&quot;&gt;([\s\S]*?)&lt;\/a&gt;/g, (m, href, label) => {
-      const token = `@@LINK${stash.length}@@`;
-      stash.push(`<a href="${href}">${label}</a>`);
-      return token;
-    });
     text = text
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, `<img src="$2" alt="$1">`)
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, rawSrc) => {
+        const { url, title } = splitImageTarget(rawSrc);
+        const protectedAttr = isProtectedAssetUrl(url) ? `data-protected-src="${escapeHtml(url)}"` : `src="${escapeHtml(url)}"`;
+        const placeholder = isProtectedAssetUrl(url) ? ` src="${transparentPixel()}"` : "";
+        return `<figure><img ${protectedAttr}${placeholder} alt="${escapeHtml(alt)}">${title ? `<figcaption>${escapeHtml(title)}</figcaption>` : ""}</figure>`;
+      })
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, href) => {
-        const target = href.startsWith("#") ? "_self" : "_blank";
-        return `<a href="${href}" target="${target}" rel="noreferrer">${label}</a>`;
+        const target = href.startsWith("#") || href.endsWith(".md") ? "_self" : "_blank";
+        return `<a href="${escapeHtml(href)}" target="${target}" rel="noreferrer">${label}</a>`;
       })
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/\*([^*]+)\*/g, "<em>$1</em>");
-    stash.forEach((html, index) => { text = text.replace(`@@LINK${index}@@`, html); });
     return text;
   }
 
-  function cloneDoc(doc) {
-    return JSON.parse(JSON.stringify(doc || {}));
+  function splitImageTarget(raw) {
+    const normalized = String(raw || "").replace(/&quot;/g, '"');
+    const match = normalized.match(/^(\S+)(?:\s+"([^"]*)")?$/);
+    return { url: match?.[1] || normalized, title: match?.[2] || "" };
   }
 
-  function loadDraftStore() {
+  function isProtectedAssetUrl(url) {
     try {
-      const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      const parsed = new URL(String(url || ""), window.location.origin);
+      return parsed.pathname.startsWith("/api/projects/");
     } catch (_error) {
-      return {};
+      return false;
     }
   }
 
-  function persistDraftStore() {
-    try {
-      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftStore));
-    } catch (_error) {
-      setStatus("浏览器阻止了本地草稿保存。");
-    }
+  function transparentPixel() {
+    return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
   }
 
-  function rebuildDocs() {
-    const merged = [...baseDocs.map(cloneDoc), ...uploadedDocs.map(cloneDoc)];
-    Object.values(draftStore).forEach((draft) => {
-      if (!draft?.id || typeof draft.body !== "string") return;
-      const doc = normalizeDoc(draft);
-      const index = merged.findIndex((item) => item.id === doc.id);
-      if (index >= 0) merged[index] = { ...merged[index], ...doc, has_draft: true };
-      else merged.unshift({ ...doc, has_draft: true });
-    });
-    docs = merged;
-  }
-
-  function normalizeDoc(doc) {
-    const body = String(doc.body || "");
-    const category = doc.category || "Drafts";
-    const title = extractTitle(body, doc.title || "Untitled Markdown");
-    const summary = stripMarkdown(body).slice(0, 220);
-    return {
-      ...doc,
-      title,
-      category,
-      summary,
-      source_path: doc.source_path || `drafts/${doc.id || "untitled"}.md`,
-      source_kind: doc.source_kind || "draft",
-      updated: doc.updated || today(),
-      tags: normalizeClientTags(doc.tags, category),
-      body,
-      headings: extractHeadings(body),
-      reading_minutes: Math.max(1, Math.round(stripMarkdown(body).length / 650)),
-    };
-  }
-
-  function normalizeClientTags(tags, category) {
-    const list = Array.isArray(tags) ? tags : [];
-    const next = [...list, category].map((tag) => String(tag || "").trim()).filter(Boolean);
-    return Array.from(new Set(next)).slice(0, 8);
-  }
-
-  function today() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
-  function nowLabel() {
-    const date = new Date();
-    const pad = (value) => String(value).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
-  function currentDoc() {
-    return docs.find((item) => item.id === currentDocId);
-  }
-
-  function hasPersistentSource(id) {
-    return baseDocs.some((doc) => doc.id === id) || uploadedDocs.some((doc) => doc.id === id);
-  }
-
-  function setStatus(message) {
-    els.draftStatus.textContent = message || "";
-  }
-
-  function updateDraftControls(doc) {
-    if (!doc) {
-      setStatus("");
-      els.discardDraft.hidden = true;
+  async function route() {
+    renderDirectoryTree();
+    renderAccount();
+    const path = currentPath();
+    if (path.startsWith("/login/")) {
+      const next = new URLSearchParams(location.search).get("next") || "";
+      renderLogin(next);
       return;
     }
-    const draft = draftStore[doc.id];
-    els.discardDraft.hidden = !draft;
-    if (draft) setStatus(`本地草稿 · ${draft.draft_updated_at || doc.updated || "已保存"}`);
-    else setStatus("可在线编辑，保存后只存到当前浏览器。");
-  }
-
-  function openEditor() {
-    const doc = currentDoc();
-    if (!doc) return;
-    els.markdownEditor.value = doc.body || "";
-    els.editorPreview.innerHTML = renderMarkdown(els.markdownEditor.value);
-    els.editorPanel.hidden = false;
-    els.articleBody.hidden = true;
-    els.markdownEditor.focus();
-  }
-
-  function closeEditor() {
-    els.editorPanel.hidden = true;
-    els.articleBody.hidden = false;
-  }
-
-  function saveDraftFromEditor() {
-    const doc = currentDoc();
-    if (!doc) return;
-    saveDraft(doc, els.markdownEditor.value);
-    showDoc(doc.id, { keepEditor: true, preserveScroll: true });
-    openEditor();
-  }
-
-  function saveDraft(doc, body) {
-    const draft = normalizeDoc({
-      ...doc,
-      body,
-      updated: today(),
-      draft_updated_at: nowLabel(),
-      source_kind: doc.source_kind || "draft",
-    });
-    draft.has_draft = true;
-    draft.draft_updated_at = nowLabel();
-    draftStore[draft.id] = draft;
-    persistDraftStore();
-    rebuildDocs();
-    renderAll();
-    setStatus(`本地草稿 · ${draft.draft_updated_at}`);
-  }
-
-  function discardCurrentDraft() {
-    const doc = currentDoc();
-    if (!doc || !draftStore[doc.id]) return;
-    delete draftStore[doc.id];
-    persistDraftStore();
-    rebuildDocs();
-    renderAll();
-    closeEditor();
-    if (hasPersistentSource(doc.id)) showDoc(doc.id);
-    else location.hash = "#/";
-  }
-
-  function createNewDraft() {
-    const id = uniqueId(`draft-${Date.now().toString(36)}`);
-    const body = `# 新建 Markdown\n\n- [ ] 待办项\n\n在这里写内容。\n`;
-    const doc = normalizeDoc({
-      id,
-      title: "新建 Markdown",
-      category: "Drafts",
-      source_path: `drafts/${id}.md`,
-      source_kind: "draft",
-      tags: ["Drafts"],
-      body,
-      updated: today(),
-      draft_updated_at: nowLabel(),
-    });
-    draftStore[id] = { ...doc, has_draft: true };
-    persistDraftStore();
-    rebuildDocs();
-    activeCategory = "Drafts";
-    renderAll();
-    pendingEditorDocId = id;
-    location.hash = `#/doc/${encodeURIComponent(id)}`;
-    if (currentDocId === id) showDoc(id);
-  }
-
-  function downloadCurrentDoc() {
-    const doc = currentDoc();
-    if (!doc) return;
-    const body = doc.body.endsWith("\n") ? doc.body : `${doc.body}\n`;
-    const blob = new Blob([body], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = markdownFilename(doc);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1200);
-  }
-
-  function markdownFilename(doc) {
-    const source = String(doc.source_path || "").split("/").pop();
-    if (source && /\.(md|markdown)$/i.test(source)) return source;
-    return `${slugify(doc.title || doc.id || "document")}.md`;
-  }
-
-  function updateTaskLine(body, taskIndex, checked) {
-    let seen = -1;
-    return String(body || "").split("\n").map((line) => {
-      if (!/^(\s*)[-*]\s+\[[ xX]\]\s+/.test(line)) return line;
-      seen += 1;
-      if (seen !== taskIndex) return line;
-      return line.replace(/^(\s*[-*]\s+)\[[ xX]\]/, `$1[${checked ? "x" : " "}]`);
-    }).join("\n");
-  }
-
-  function handleRenderedTaskToggle(event) {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || !input.matches("[data-task-index]")) return;
-    const doc = currentDoc();
-    if (!doc) return;
-    const nextBody = updateTaskLine(doc.body, Number(input.dataset.taskIndex), input.checked);
-    const y = window.scrollY;
-    saveDraft(doc, nextBody);
-    showDoc(doc.id, { preserveScroll: true });
-    window.scrollTo({ top: y, behavior: "instant" });
-  }
-
-  function handleEditorPreviewTaskToggle(event) {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || !input.matches("[data-task-index]")) return;
-    els.markdownEditor.value = updateTaskLine(els.markdownEditor.value, Number(input.dataset.taskIndex), input.checked);
-    els.editorPreview.innerHTML = renderMarkdown(els.markdownEditor.value);
-    setStatus("正在编辑，尚未保存。");
-  }
-
-  function showHome() {
-    currentDocId = "";
-    closeEditor();
-    els.homeView.hidden = false;
-    els.articleView.hidden = true;
-    renderDocGrid();
-  }
-
-  function showDoc(id, options = {}) {
-    const doc = docs.find((item) => item.id === id) || docs[0];
-    if (!doc) return showHome();
-    currentDocId = doc.id;
-    els.homeView.hidden = true;
-    els.articleView.hidden = false;
-    if (!options.keepEditor) closeEditor();
-    els.articleMeta.innerHTML = `
-      <span>${escapeHtml(doc.category)}</span>
-      <span>${escapeHtml(doc.updated)}</span>
-      <span>${doc.reading_minutes || 1} min read</span>
-      <span>${escapeHtml(doc.source_path || "uploaded")}</span>
-      ${draftStore[doc.id] ? "<span>本地草稿</span>" : ""}
-    `;
-    els.articleBody.innerHTML = renderMarkdown(doc.body);
-    if (options.keepEditor) els.editorPreview.innerHTML = renderMarkdown(els.markdownEditor.value);
-    renderToc(doc);
-    renderRelated(doc);
-    updateDraftControls(doc);
-    if (pendingEditorDocId === doc.id) {
-      pendingEditorDocId = "";
-      openEditor();
-    }
-    if (!options.preserveScroll) window.scrollTo({ top: 0, behavior: "instant" });
-  }
-
-  function renderToc(doc) {
-    if (!doc.headings?.length) {
-      els.tocNav.innerHTML = `<span style="color: var(--muted); font-size: 13px;">暂无目录</span>`;
+    if (path.startsWith("/admin/")) {
+      renderAdmin();
       return;
     }
-    els.tocNav.innerHTML = doc.headings.map((heading) => `
-      <a class="toc-level-${escapeHtml(heading.level)}" href="#${escapeHtml(heading.slug)}">${escapeHtml(heading.text)}</a>
-    `).join("");
-  }
-
-  function renderRelated(doc) {
-    const related = docs
-      .filter((item) => item.id !== doc.id && (item.category === doc.category || (item.tags || []).some((tag) => (doc.tags || []).includes(tag))))
-      .slice(0, 5);
-    els.relatedDocs.innerHTML = related.map((item) => `
-      <a class="related-item" href="#/doc/${encodeURIComponent(item.id)}">
-        <strong>${escapeHtml(item.title)}</strong>
-        <span>${escapeHtml(item.category)} · ${escapeHtml(item.updated)}</span>
-      </a>
-    `).join("") || `<span style="color: var(--muted); font-size: 13px;">暂无相关文档</span>`;
-  }
-
-  function route() {
-    const match = location.hash.match(/^#\/doc\/(.+)$/);
-    if (match) showDoc(decodeURIComponent(match[1]));
-    else showHome();
-  }
-
-  function renderAll() {
-    els.buildMeta.textContent = `${docs.length} 篇文档 · 构建时间 ${seed.generatedAt || "本地"} · 支持上传 / 在线编辑 Markdown`;
-    renderNavigation();
-    renderDocGrid();
-  }
-
-  async function handleUpload(event) {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-    const imageUrls = new Map();
-    files
-      .filter((file) => file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name))
-      .forEach((file) => {
-        const url = URL.createObjectURL(file);
-        imageUrls.set(file.name, url);
-        if (file.webkitRelativePath) imageUrls.set(file.webkitRelativePath, url);
-        imageUrls.set(`./${file.name}`, url);
-        imageUrls.set(`assets/${file.name}`, url);
-        imageUrls.set(`./assets/${file.name}`, url);
-      });
-    const loaded = [];
-    for (const file of files.filter((item) => /\.(md|markdown)$/i.test(item.name) || item.type.includes("markdown") || item.type === "text/plain")) {
-      const body = await file.text();
-      const bodyWithAssets = rewriteUploadedImageLinks(body, imageUrls);
-      const title = extractTitle(body, file.name.replace(/\.(md|markdown)$/i, ""));
-      const id = uniqueId(slugify(file.name.replace(/\.(md|markdown)$/i, "")));
-      const doc = {
-        id,
-        title,
-        category: "Uploaded",
-        summary: stripMarkdown(bodyWithAssets).slice(0, 220),
-        source_path: file.name,
-        source_kind: "uploaded",
-        updated: new Date().toISOString().slice(0, 10),
-        tags: ["Uploaded"],
-        body: bodyWithAssets,
-        headings: extractHeadings(bodyWithAssets),
-        reading_minutes: Math.max(1, Math.round(stripMarkdown(bodyWithAssets).length / 650)),
-      };
-      uploadedDocs = [doc, ...uploadedDocs];
-      loaded.push(doc);
+    if (!project) {
+      renderHome();
+      return;
     }
-    els.uploadList.innerHTML = loaded.length
-      ? loaded.map((doc) => `<a href="#/doc/${encodeURIComponent(doc.id)}">${escapeHtml(doc.title)}</a>`).join("")
-      : `<span>没有选中 Markdown 文件。</span>`;
-    if (!loaded.length) return;
-    rebuildDocs();
-    activeCategory = "Uploaded";
-    renderAll();
-    location.hash = `#/doc/${encodeURIComponent(loaded[0].id)}`;
+    await verifyAccess();
+    if (!accessState.allowed) renderProjectLocked();
+    else {
+      await loadProtectedProjectData();
+      renderProject();
+    }
   }
 
-  function rewriteUploadedImageLinks(body, imageUrls) {
-    const resolve = (raw) => {
-      const clean = String(raw).split("#", 1)[0].split("?", 1)[0];
-      return imageUrls.get(clean) || imageUrls.get(clean.replace(/^\.\//, "")) || imageUrls.get(clean.split("/").pop());
-    };
-    return String(body)
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, src) => {
-        const url = resolve(src.trim());
-        return url ? `![${alt}](${url})` : m;
-      })
-      .replace(/!\[\[([^\]]+)\]\]/g, (m, src) => {
-        const url = resolve(src.trim());
-        return url ? `![${src}](${url})` : m;
-      });
-  }
-
-  function extractTitle(body, fallback) {
-    const match = String(body).match(/^#\s+(.+)$/m);
-    return match ? stripMarkdown(match[1]) : fallback;
-  }
-  function extractHeadings(body) {
-    return String(body).split("\n").map((line) => {
-      const match = /^(#{2,4})\s+(.+)$/.exec(line);
-      if (!match) return null;
-      const text = stripMarkdown(match[2]);
-      return { level: String(match[1].length), text, slug: slugify(text) };
-    }).filter(Boolean).slice(0, 24);
-  }
-  function uniqueId(base) {
-    let id = base || "uploaded";
-    let index = 2;
-    while (docs.some((doc) => doc.id === id)) id = `${base}-${index++}`;
-    return id;
-  }
-
-  els.searchInput.addEventListener("input", renderDocGrid);
-  els.clearSearch.addEventListener("click", () => { els.searchInput.value = ""; renderDocGrid(); });
-  els.backHome.addEventListener("click", () => { location.hash = "#/"; });
-  els.uploadInput.addEventListener("change", handleUpload);
-  els.sortRecent.addEventListener("click", () => { sortMode = "recent"; renderDocGrid(); });
-  els.sortTitle.addEventListener("click", () => { sortMode = "title"; renderDocGrid(); });
-  els.newDraft.addEventListener("click", createNewDraft);
-  els.editDoc.addEventListener("click", openEditor);
-  els.closeEditor.addEventListener("click", closeEditor);
-  els.saveDraft.addEventListener("click", saveDraftFromEditor);
-  els.downloadDoc.addEventListener("click", downloadCurrentDoc);
-  els.discardDraft.addEventListener("click", discardCurrentDraft);
-  els.markdownEditor.addEventListener("input", () => {
-    els.editorPreview.innerHTML = renderMarkdown(els.markdownEditor.value);
-    setStatus("正在编辑，尚未保存。");
+  els.searchInput.addEventListener("input", () => {
+    activeQuery = els.searchInput.value;
+    if (project && accessState.allowed) renderProject();
   });
-  els.articleBody.addEventListener("change", handleRenderedTaskToggle);
-  els.editorPreview.addEventListener("change", handleEditorPreviewTaskToggle);
-  window.addEventListener("hashchange", route);
+  window.addEventListener("hashchange", () => {
+    if (project && accessState.allowed) renderProject();
+  });
+  els.accountButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (els.accountPopover.hidden) openAccountPopover();
+    else closeAccountPopover();
+  });
+  document.addEventListener("click", (event) => {
+    if (els.accountPopover.hidden) return;
+    if (els.accountPopover.contains(event.target) || els.accountButton.contains(event.target)) return;
+    closeAccountPopover();
+  });
 
-  rebuildDocs();
-  renderAll();
-  route();
+  route().catch((error) => {
+    els.homeView.innerHTML = `<div class="empty-state">加载失败：${escapeHtml(error.message || error)}</div>`;
+  });
 })();

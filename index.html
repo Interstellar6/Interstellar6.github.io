@@ -3,114 +3,51 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Video2Mesh Field Notes</title>
-    <meta name="description" content="Video2Mesh 项目文档、调研和运行手册的静态博客网站。" />
+    <title>relumeow.top</title>
+    <meta name="description" content="多项目文档、调研和运行记录的统一入口。" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar" aria-label="文档导航">
-        <a class="brand" href="#/" aria-label="Video2Mesh Field Notes">
-          <span class="brand-mark">V2M</span>
-          <span>
-            <strong>Video2Mesh</strong>
-            <em>Field Notes</em>
-          </span>
+    <div class="workspace-shell">
+      <aside class="project-rail" aria-label="项目文档目录">
+        <a class="site-brand" href="/home/" aria-label="relumeow.top home">
+          <span class="site-wordmark">relumeow.top</span>
         </a>
-        <nav class="side-nav" id="categoryNav"></nav>
-        <section class="upload-panel" aria-label="上传 Markdown">
-          <h2>上传 Markdown</h2>
-          <p>选择本地 `.md` 后会临时加入当前浏览器视图；如果有相对路径图片，把图片文件一起选中。要永久更新，放到 `docs-blog/content/` 后重新构建。</p>
-          <label class="upload-button">
-            <input id="uploadInput" type="file" accept=".md,.markdown,text/markdown,text/plain,image/*" multiple />
-            选择文档/图片
-          </label>
-          <div id="uploadList" class="upload-list"></div>
-        </section>
-        <section class="draft-panel" aria-label="在线编辑 Markdown">
-          <h2>在线编辑</h2>
-          <button id="newDraft" class="secondary-button" type="button">新建 Markdown</button>
+        <section class="rail-section directory-section">
+          <div class="rail-heading">
+            <span>Directory</span>
+          </div>
+          <nav id="directoryTree" class="directory-tree"></nav>
         </section>
       </aside>
 
-      <main class="main">
-        <header class="topbar">
+      <main class="content-shell">
+        <header class="content-topbar">
           <div>
-            <h1>Project Research Blog</h1>
-            <p id="buildMeta">Video2Mesh 文档知识库</p>
+            <p id="routeLabel" class="route-label">Home</p>
+            <h1 id="pageTitle">relumeow.top</h1>
           </div>
-          <div class="search-wrap">
-            <input id="searchInput" type="search" placeholder="搜索 3DGS、Scene Graph、Unity、流水线..." />
-            <button id="clearSearch" type="button" title="清空搜索">清空</button>
+          <div class="topbar-actions">
+            <div class="search-box">
+              <input id="searchInput" type="search" placeholder="Search docs" />
+              <span>⌘K</span>
+            </div>
+            <div class="account-menu">
+              <button id="accountButton" class="account-button" type="button" aria-haspopup="dialog" aria-expanded="false">
+                <span id="accountAvatar" class="account-avatar">访</span>
+                <span id="accountLabel">访客</span>
+              </button>
+              <section id="accountPopover" class="account-popover" hidden></section>
+            </div>
           </div>
         </header>
 
-        <section id="homeView" class="home-view">
-          <section class="feature-row">
-            <article class="hero-card">
-              <img src="./assets/v2m-docs-mark.svg" alt="" />
-              <div>
-                <h2>从扫描视频到可仿真的 3D 场景资产</h2>
-                <p>把项目说明、流水线、3DGS 调研、scene graph、游戏交互场景和运行手册集中在一个可搜索、可上传、可交互的静态博客中。</p>
-              </div>
-            </article>
-            <article class="quick-card">
-              <h2>更新流程</h2>
-              <ol>
-                <li>新增 `.md` 到 `docs-blog/content/`。</li>
-                <li>图片放在文档旁边或 `content/assets/`。</li>
-                <li>运行 `python3 docs-blog/build_site.py`。</li>
-              </ol>
-            </article>
-          </section>
-          <section class="toolbar">
-            <div id="categoryChips" class="chip-row"></div>
-            <div class="view-actions">
-              <button id="sortRecent" type="button">最新</button>
-              <button id="sortTitle" type="button">标题</button>
-            </div>
-          </section>
-          <section id="docGrid" class="doc-grid" aria-live="polite"></section>
+        <section id="homeView" class="home-view"></section>
+        <section id="projectView" class="project-view" hidden>
+          <article id="documentPanel" class="document-panel"></article>
         </section>
-
-        <article id="articleView" class="article-view" hidden>
-          <button id="backHome" class="back-link" type="button">返回文档列表</button>
-          <div class="article-layout">
-            <div class="article-body-wrap">
-              <div id="articleMeta" class="article-meta"></div>
-              <div class="article-actions">
-                <div class="action-group">
-                  <button id="editDoc" type="button">编辑 Markdown</button>
-                  <button id="downloadDoc" type="button">下载 md</button>
-                  <button id="discardDraft" type="button" hidden>撤销草稿</button>
-                </div>
-                <span id="draftStatus" class="draft-status"></span>
-              </div>
-              <section id="editorPanel" class="editor-panel" aria-label="Markdown 在线编辑器" hidden>
-                <div class="editor-toolbar">
-                  <strong>Markdown</strong>
-                  <div class="action-group">
-                    <button id="saveDraft" type="button">保存草稿</button>
-                    <button id="closeEditor" type="button">关闭编辑</button>
-                  </div>
-                </div>
-                <div class="editor-grid">
-                  <textarea id="markdownEditor" spellcheck="false" aria-label="Markdown 源码"></textarea>
-                  <div id="editorPreview" class="article-body editor-preview" aria-label="Markdown 预览"></div>
-                </div>
-              </section>
-              <div id="articleBody" class="article-body"></div>
-            </div>
-            <aside class="toc-panel">
-              <h2>目录</h2>
-              <nav id="tocNav"></nav>
-              <div class="reading-stack">
-                <h2>相关文档</h2>
-                <div id="relatedDocs"></div>
-              </div>
-            </aside>
-          </div>
-        </article>
+        <section id="loginView" class="login-view" hidden></section>
+        <section id="adminView" class="admin-view" hidden></section>
       </main>
     </div>
     <script src="./site-data.js"></script>

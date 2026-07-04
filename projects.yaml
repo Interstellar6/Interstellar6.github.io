@@ -1,0 +1,138 @@
+site:
+  title: relumeow.top
+  description: 多项目文档、调研和运行记录的统一入口。
+  default_route: /home/
+  api_url: https://api.relumeow.top
+  access_api_url: same-origin
+  nav:
+    - label: Home
+      route: /home/
+
+projects:
+  - slug: video2mesh
+    route: /video2mesh/
+    title: Video2Mesh
+    brand: Video2Mesh
+    mark: V2M
+    subtitle: Field Notes
+    description: 从扫描视频到可交互 3D 场景资产的项目文档、技术调研和运行记录。
+    access:
+      mode: passcode
+      realm: video2mesh
+      label: Video2Mesh 项目空间
+    source:
+      repo: ../Video2Mesh
+      docs_root: docs/video2mesh
+    navigation:
+      directory_overview: overview.md
+      hide_overview_from_child_list: true
+    pinned_docs:
+      - overview.md
+      - project-docs/overview.md
+      - research-catalog/overview.md
+      - progress/overview.md
+    catalog:
+      category: 调研目录
+      root: research-catalog/
+      stages:
+        - key: input-pose-pointcloud
+          title: 输入、位姿与点云
+          summary: 视频抽帧、COLMAP/MVS、learned pose fallback、稠密点云和坐标尺度合同。
+          image: assets/uploaded/video2mesh-research-catalog/pipeline-overview.svg
+          tags: [COLMAP, Point Cloud, Pose]
+        - key: visual-3dgs
+          title: 视觉重建 / 3DGS
+          summary: GraphDECO 3DGS、Spark、SuperSplat 和 visual proxy 的工程边界。
+          image: assets/uploaded/video2mesh-research-catalog/pipeline-overview.svg
+          tags: [3DGS, Spark, SuperSplat]
+        - key: mesh-reconstruction
+          title: Mesh 重建
+          summary: COLMAP Delaunay、Poisson、GS2Mesh、SuGaR、2DGS/GOF 的阶段定位。
+          image: assets/uploaded/video2mesh-research-catalog/stage-mesh.svg
+          tags: [Mesh, GS2Mesh, SuGaR]
+        - key: semantic-scene-graph
+          title: 语义与 Scene Graph
+          summary: SAM/Grounded-SAM、semantic splats、mesh face sidecar 和交互查询。
+          image: assets/uploaded/video2mesh-research-catalog/stage-semantics.svg
+          tags: [Semantics, Scene Graph]
+        - key: experiments
+          title: 本项目实验
+          summary: GS2Mesh、Open3D Poisson、COLMAP Delaunay、语义投影和 Web demo。
+          image: assets/uploaded/video2mesh-experiments/04-visual-physics-proxy-demo.png
+          tags: [Experiments, Video2Mesh]
+    reading_paths:
+      - title: 项目文档
+        tags: [项目文档, Video2Mesh]
+        query: pipeline
+      - title: 调研目录
+        tags: [调研目录, Research Catalog]
+        query: mesh
+      - title: 进度目录
+        tags: [进度目录, Weekly]
+        query: weekly
+
+  - slug: challengecup-agent-system
+    route: /challengecup-agent-system/
+    title: ChallengeCup Agent System
+    brand: ChallengeCup
+    mark: CC
+    subtitle: Agent System
+    description: 多模态模型协同自主智能体系统的赛题分析、技术调研、进度和项目使用文档。
+    access:
+      mode: passcode
+      realm: challengecup-agent-system
+      label: ChallengeCup 项目空间
+    source:
+      repo: ../ChallengeCup
+      docs_root: docs/challengecup-agent-system
+    navigation:
+      directory_overview: overview.md
+      hide_overview_from_child_list: true
+    pinned_docs:
+      - overview.md
+      - contest-analysis/overview.md
+      - research-catalog/overview.md
+      - progress/overview.md
+      - project-docs/overview.md
+    catalog:
+      category: 调研目录
+      root: research-catalog/
+      stages:
+        - key: target-detection
+          title: 目标检测
+          summary: YOLOv8、FPN、多尺度输入、SAHI 和 tiny soldier 检测瓶颈。
+          image: assets/uploaded/challengecup-research-catalog/research-catalog-pipeline.svg
+          tags: [YOLOv8, FPN, SAHI]
+        - key: scene-cognition
+          title: 场景认知
+          summary: Places365、EfficientNet、MobileCLIP 和 air/sea/urban/forest 场景标签。
+          image: assets/uploaded/challengecup-places365-resnet50/scene-cognition-pipeline.svg
+          tags: [Places365, EfficientNet, MobileCLIP]
+        - key: task-decision-postprocess
+          title: 任务决策与后处理
+          summary: 场景先验、precision policy、WBF、Model Soups、candidate gate。
+          image: assets/uploaded/challengecup-model-soups/model-soups-pipeline.svg
+          tags: [Policy, WBF, Model Soups]
+        - key: data-engine-semisupervised
+          title: 数据闭环与半监督
+          summary: Teacher-Student、Grounding DINO、Copy-Paste、错例审计和数据回流。
+          image: assets/uploaded/challengecup-soft-teacher/teacher-student-pipeline.svg
+          tags: [Teacher, Pseudo Label, Copy-Paste]
+        - key: deployment
+          title: 端侧部署
+          summary: YOLO 权重导出 ONNX，经 CANN/ATC 转换为 Ascend 310B 可运行 OM。
+          image: assets/uploaded/challengecup-ascend-cann-atc/ascend-deploy-pipeline.svg
+          tags: [Ascend, ONNX, ATC]
+    reading_paths:
+      - title: 赛题分析目录
+        tags: [赛题分析目录, R1]
+        query: 赛题
+      - title: 调研目录
+        tags: [调研目录, YOLOv8, Teacher Student]
+        query: 模型
+      - title: 进度目录
+        tags: [进度目录, Results]
+        query: mAP
+      - title: 项目使用文档目录
+        tags: [项目使用文档目录, How to Run]
+        query: 运行

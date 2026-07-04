@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import hashlib
+import mimetypes
+import os
+import secrets
+from http import HTTPStatus
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+
+ROOT = Path(__file__).resolve().parent
+SITE = ROOT / "_site"
+TOKENS: dict[str, str] = {}
+REALM_HASH_ENV = {
+    "video2mesh": "RELUMEOW_ACCESS_VIDEO2MESH_HASH",
+    "challengecup-agent-system": "RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH",
+}
+
+
+def load_env_file() -> None:
+    for path in (ROOT / ".dev.vars", ROOT / ".env"):
+        if not path.exists():
+            continue
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(SITE), **kwargs)
+
+    def end_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.end_headers()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/access/login":
+            body = self.read_json()
+            realm = str(body.get("realm") or "")
+            passcode = str(body.get("passcode") or "")
+            if not verify_passcode(realm, passcode):
+                self.reply({"ok": False, "error": "invalid passcode"}, HTTPStatus.UNAUTHORIZED)
+                return
+            token = secrets.token_urlsafe(32)
+            TOKENS[token] = realm
+            self.reply({"ok": True, "realm": realm, "token": token, "expires_at": "dev"})
+            return
+        if parsed.path == "/api/access/verify":
+            body = self.read_json()
+            realm = str(body.get("realm") or "")
+            token = str(body.get("token") or "")
+            self.reply({"ok": bool(token and TOKENS.get(token) == realm)}, HTTPStatus.OK if TOKENS.get(token) == realm else HTTPStatus.UNAUTHORIZED)
+            return
+        self.reply({"ok": False, "error": "not found"}, HTTPStatus.NOT_FOUND)
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/health":
+            self.reply({"ok": True, "service": "relumeow-dev-access"})
+            return
+        if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/data"):
+            realm = parsed.path.split("/")[3]
+            if not self.check_token(realm):
+                return
+            target = SITE / "_protected" / realm / "site-data.json"
+            if not target.exists():
+                self.reply({"ok": False, "error": "not found"}, HTTPStatus.NOT_FOUND)
+                return
+            payload = json.loads(target.read_text(encoding="utf-8"))
+            self.reply({"ok": True, **payload})
+            return
+        if parsed.path.startswith("/api/projects/") and "/assets/" in parsed.path:
+            parts = parsed.path.split("/")
+            realm = parts[3]
+            if not self.check_token(realm):
+                return
+            asset_rel = "/".join(parts[5:])
+            target = (SITE / "_protected" / realm / "assets" / unquote(asset_rel)).resolve()
+            root = (SITE / "_protected" / realm / "assets").resolve()
+            if not str(target).startswith(str(root)) or not target.is_file():
+                self.reply({"ok": False, "error": "not found"}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
+            self.end_headers()
+            self.wfile.write(target.read_bytes())
+            return
+        if parsed.path.startswith("/_protected/"):
+            self.reply({"ok": False, "error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+        super().do_GET()
+
+    def check_token(self, realm: str) -> bool:
+        header = self.headers.get("Authorization", "")
+        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+        if TOKENS.get(token) == realm:
+            return True
+        self.reply({"ok": False, "error": "invalid token"}, HTTPStatus.UNAUTHORIZED)
+        return False
+
+    def read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length") or "0")
+        if length <= 0:
+            return {}
+        return json.loads(self.rfile.read(length).decode("utf-8"))
+
+    def reply(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
+        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+
+def verify_passcode(realm: str, passcode: str) -> bool:
+    salt = os.environ.get("RELUMEOW_ACCESS_SALT", "")
+    expected = os.environ.get(REALM_HASH_ENV.get(realm, ""), "")
+    if not salt or not expected or not passcode:
+        return False
+    actual = hashlib.sha256(f"{salt}:{passcode}".encode("utf-8")).hexdigest()
+    return secrets.compare_digest(actual, expected)
+
+
+def main() -> int:
+    load_env_file()
+    server = ThreadingHTTPServer(("127.0.0.1", 4173), Handler)
+    print("relumeow dev server: http://127.0.0.1:4173/")
+    server.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

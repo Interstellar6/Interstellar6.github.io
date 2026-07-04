@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "relumeow-top",
+  "main": "./access-worker.js",
+  "compatibility_date": "2026-07-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "route": {
+    "pattern": "relumeow.top/*",
+    "zone_name": "relumeow.top"
+  },
+  "assets": {
+    "directory": "./_site",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/_protected/*"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  }
+}

@@ -1,0 +1,72 @@
+---
+title: relumeow.top 部署说明
+id: relumeow-deployment
+category: 站点运维
+visibility: private
+summary: 中央站点的构建、权限 Worker、Cloudflare Workers Static Assets 和 GitHub Pages/CNAME 部署说明。
+tags:
+  - relumeow.top
+  - Cloudflare Workers
+  - Deploy
+---
+
+# relumeow.top 部署说明
+
+## 本地构建
+
+```bash
+python3 build_site.py
+python3 -m py_compile build_site.py
+node --check app.js
+node --check access-worker.js
+```
+
+`projects.yaml` 是唯一的项目接入清单。构建器会从相邻项目仓库读取 `docs/<project-slug>/`，生成 `_site/`。受保护项目的 Markdown 正文与图片会写入 `_site/_protected/<realm>/`，前端静态路由不会直接暴露这些正文。
+
+## 口令哈希
+
+不要把明文口令写进前端、manifest 或 Worker 源码。用脚本生成 salt 和 hash：
+
+```bash
+python3 scripts/hash_access_passcode.py --passcode "your-passcode"
+python3 scripts/hash_access_passcode.py --salt "<same-salt>" --passcode "another-passcode"
+```
+
+然后把值配置成 Worker secrets：
+
+```bash
+npx wrangler secret put RELUMEOW_ACCESS_SALT
+npx wrangler secret put RELUMEOW_ACCESS_TOKEN_SECRET
+npx wrangler secret put RELUMEOW_ACCESS_VIDEO2MESH_HASH
+npx wrangler secret put RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH
+```
+
+Cloudflare 文档要求敏感值使用 secrets；`wrangler secret put` 会创建并部署带新 secret 的 Worker 版本。
+
+## Cloudflare Workers Static Assets
+
+`wrangler.jsonc` 使用 Workers Static Assets：
+
+```jsonc
+{
+  "main": "./access-worker.js",
+  "assets": {
+    "directory": "./_site",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/_protected/*"]
+  }
+}
+```
+
+静态 HTML/CSS/JS 由 assets binding 托管；`/api/*` 先进入 Worker。Worker 负责：
+
+| 路由 | 作用 |
+|---|---|
+| `/api/access/login` | 后台验证口令 hash，签发短期 token |
+| `/api/access/verify` | 验证 token 是否仍然有效 |
+| `/api/projects/<realm>/data` | 验证后返回受保护项目 Markdown JSON |
+| `/api/projects/<realm>/assets/...` | 验证后返回受保护项目图片 |
+
+## GitHub Pages 备选
+
+如果临时只走 GitHub Pages，`_site/` 仍然可作为静态站发布，`CNAME` 会指向 `relumeow.top`。但 GitHub Pages 无法保护 `_protected/`，所以受保护项目必须使用 Cloudflare Worker 或其它后台 API 承载。不要把 `_site/_protected/` 部署到纯静态 Pages。
