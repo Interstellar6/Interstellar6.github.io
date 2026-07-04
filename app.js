@@ -166,7 +166,12 @@
       headers: { Authorization: `Bearer ${stored.token}` },
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) throw new Error(data.error || "项目文档加载失败");
+    if (!res.ok || !data.ok) {
+      const error = new Error(data.error || "项目文档加载失败");
+      error.status = res.status;
+      error.realm = realm;
+      throw error;
+    }
     docs = Array.isArray(data.docs) ? data.docs : [];
     tree = Array.isArray(data.tree) ? data.tree : [];
     protectedDataLoaded = true;
@@ -619,8 +624,16 @@
     await verifyAccess();
     if (!accessState.allowed) renderProjectLocked();
     else {
-      await loadProtectedProjectData();
-      renderProject();
+      try {
+        await loadProtectedProjectData();
+        renderProject();
+      } catch (error) {
+        const realm = project.access?.realm || project.slug;
+        clearAccess(realm);
+        accessState = { checked: true, allowed: false, reason: error.message || "load failed" };
+        protectedDataLoaded = false;
+        renderProjectLocked();
+      }
     }
   }
 
@@ -643,6 +656,13 @@
   });
 
   route().catch((error) => {
+    if (project) {
+      const realm = project.access?.realm || project.slug;
+      clearAccess(realm);
+      accessState = { checked: true, allowed: false, reason: error.message || "load failed" };
+      renderProjectLocked();
+      return;
+    }
     els.homeView.innerHTML = `<div class="empty-state">加载失败：${escapeHtml(error.message || error)}</div>`;
   });
 })();
