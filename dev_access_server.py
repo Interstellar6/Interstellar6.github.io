@@ -23,10 +23,6 @@ REALM_HASH_ENV = {
     "video2mesh": "RELUMEOW_ACCESS_VIDEO2MESH_HASH",
     "challengecup-agent-system": "RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH",
 }
-REALM_ADMIN_HASH_ENV = {
-    "video2mesh": "RELUMEOW_ADMIN_VIDEO2MESH_HASH",
-    "challengecup-agent-system": "RELUMEOW_ADMIN_CHALLENGECUP_AGENT_SYSTEM_HASH",
-}
 
 
 def load_env_file() -> None:
@@ -62,20 +58,27 @@ class Handler(SimpleHTTPRequestHandler):
             body = self.read_json()
             realm = str(body.get("realm") or "")
             role = normalize_role(str(body.get("role") or "visitor"))
-            passcode = str(body.get("passcode") or "")
-            if not verify_passcode(realm, passcode, role):
+            passcode = str(body.get("password") or body.get("passcode") or "")
+            username = str(body.get("username") or "")
+            if role == "admin":
+                ok = verify_admin(username, passcode)
+                token_realm = "*"
+            else:
+                ok = verify_passcode(realm, passcode)
+                token_realm = realm
+            if not ok:
                 self.reply({"ok": False, "error": "invalid passcode"}, HTTPStatus.UNAUTHORIZED)
                 return
             token = secrets.token_urlsafe(32)
-            TOKENS[token] = {"realm": realm, "role": role}
-            self.reply({"ok": True, "realm": realm, "role": role, "token": token, "expires_at": "dev"})
+            TOKENS[token] = {"realm": token_realm, "role": role, "username": username if role == "admin" else ""}
+            self.reply({"ok": True, "realm": token_realm, "role": role, "username": username if role == "admin" else "", "token": token, "expires_at": "dev"})
             return
         if parsed.path == "/api/access/verify":
             body = self.read_json()
             realm = str(body.get("realm") or "")
             token = str(body.get("token") or "")
             session = TOKENS.get(token)
-            ok = bool(session and session.get("realm") == realm)
+            ok = bool(session and (session.get("realm") == realm or (session.get("role") == "admin" and session.get("realm") == "*")))
             self.reply({"ok": ok, "realm": realm, "role": session.get("role", "visitor") if session else "visitor"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
         if parsed.path.startswith("/api/discussions/"):
@@ -206,7 +209,7 @@ class Handler(SimpleHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         token = header[7:].strip() if header.lower().startswith("bearer ") else ""
         session = TOKENS.get(token)
-        if session and session.get("realm") == realm:
+        if session and (session.get("realm") == realm or (session.get("role") == "admin" and session.get("realm") == "*")):
             return session
         return None
 
@@ -236,9 +239,19 @@ def normalize_role(role: str) -> str:
     return "admin" if role == "admin" else "visitor"
 
 
-def verify_passcode(realm: str, passcode: str, role: str = "visitor") -> bool:
+def verify_admin(username: str, password: str) -> bool:
+    expected_user = os.environ.get("RELUMEOW_ADMIN_USERNAME", "")
     salt = os.environ.get("RELUMEOW_ACCESS_SALT", "")
-    env_name = REALM_ADMIN_HASH_ENV.get(realm, "") if normalize_role(role) == "admin" else REALM_HASH_ENV.get(realm, "")
+    expected = os.environ.get("RELUMEOW_ADMIN_PASSWORD_HASH", "")
+    if not expected_user or username != expected_user or not salt or not expected or not password:
+        return False
+    actual = hashlib.sha256(f"{salt}:{password}".encode("utf-8")).hexdigest()
+    return secrets.compare_digest(actual, expected)
+
+
+def verify_passcode(realm: str, passcode: str) -> bool:
+    salt = os.environ.get("RELUMEOW_ACCESS_SALT", "")
+    env_name = REALM_HASH_ENV.get(realm, "")
     expected = os.environ.get(env_name, "")
     if not salt or not expected or not passcode:
         return False

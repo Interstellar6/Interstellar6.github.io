@@ -67,6 +67,20 @@
         <section id="loginView" class="login-view" hidden></section>
         <section id="adminView" class="admin-view" hidden></section>
       </main>
+
+      <button id="tocEdgeToggle" class="toc-edge-toggle" type="button" aria-label="隐藏标题导航" aria-pressed="false">
+        <span aria-hidden="true"></span>
+      </button>
+      <div id="tocResizer" class="toc-resizer" role="separator" aria-label="调整标题导航宽度" aria-orientation="vertical" tabindex="0"></div>
+      <aside class="outline-rail" aria-label="当前文档标题导航">
+        <div class="outline-head">
+          <span>Outline</span>
+          <button id="tocToggle" class="toc-toggle" type="button" aria-label="隐藏标题导航" aria-pressed="false">
+            <span aria-hidden="true"></span>
+          </button>
+        </div>
+        <nav id="outlineTree" class="outline-tree"></nav>
+      </aside>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js" crossorigin="anonymous"></script>
     <script src="./site-data.js"></script>

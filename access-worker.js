@@ -2,12 +2,10 @@ const REALMS = {
   "video2mesh": {
     title: "Video2Mesh",
     visitorHashEnv: "RELUMEOW_ACCESS_VIDEO2MESH_HASH",
-    adminHashEnv: "RELUMEOW_ADMIN_VIDEO2MESH_HASH",
   },
   "challengecup-agent-system": {
     title: "ChallengeCup Agent System",
     visitorHashEnv: "RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH",
-    adminHashEnv: "RELUMEOW_ADMIN_CHALLENGECUP_AGENT_SYSTEM_HASH",
   },
 };
 
@@ -96,14 +94,17 @@ async function handleLogin(request, env, cors) {
   const body = await readJson(request);
   const realm = normalizeRealm(body.realm);
   const role = normalizeRole(body.role);
+  if (role === "admin") {
+    return await handleAdminLogin(body, env, cors);
+  }
   const passcode = String(body.passcode || "");
   if (!REALMS[realm] || !passcode) {
     return json({ ok: false, error: "invalid realm or passcode" }, cors, 400);
   }
 
-  const expectedHash = expectedPasscodeHash(realm, role, env);
+  const expectedHash = expectedVisitorPasscodeHash(realm, env);
   if (!expectedHash) {
-    return json({ ok: false, error: role === "admin" ? "admin login is not configured" : "access login is not configured" }, cors, 403);
+    return json({ ok: false, error: "access login is not configured" }, cors, 403);
   }
   const allowed = await verifyPasscodeHash(passcode, expectedHash, env);
   if (!allowed) {
@@ -113,6 +114,26 @@ async function handleLogin(request, env, cors) {
   const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
   const token = await signToken({ realm, role, exp, nonce: crypto.randomUUID() }, env);
   return json({ ok: true, realm, role, token, expires_at: new Date(exp * 1000).toISOString() }, cors);
+}
+
+async function handleAdminLogin(body, env, cors) {
+  const username = String(body.username || "").trim();
+  const password = String(body.password || body.passcode || "");
+  const expectedUser = String(env.RELUMEOW_ADMIN_USERNAME || "").trim();
+  const expectedHash = String(env.RELUMEOW_ADMIN_PASSWORD_HASH || "").trim();
+  if (!expectedUser || !expectedHash) {
+    return json({ ok: false, error: "admin login is not configured" }, cors, 403);
+  }
+  if (!username || !password || username !== expectedUser) {
+    return json({ ok: false, error: "invalid admin credentials" }, cors, 401);
+  }
+  const allowed = await verifyPasscodeHash(password, expectedHash, env);
+  if (!allowed) {
+    return json({ ok: false, error: "invalid admin credentials" }, cors, 401);
+  }
+  const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
+  const token = await signToken({ realm: "*", role: "admin", username, exp, nonce: crypto.randomUUID() }, env);
+  return json({ ok: true, realm: "*", role: "admin", username, token, expires_at: new Date(exp * 1000).toISOString() }, cors);
 }
 
 async function handleVerify(request, env, cors) {
@@ -277,10 +298,9 @@ function normalizeRole(value) {
   return String(value || "").trim().toLowerCase() === "admin" ? "admin" : "visitor";
 }
 
-function expectedPasscodeHash(realm, role, env) {
+function expectedVisitorPasscodeHash(realm, env) {
   const config = REALMS[realm];
   if (!config) return "";
-  if (role === "admin") return String(env[config.adminHashEnv] || "");
   return String(env[config.visitorHashEnv] || "");
 }
 
@@ -447,9 +467,13 @@ async function verifyTokenForRealm(token, realm, env) {
   } catch (_error) {
     return { ok: false, error: "invalid token" };
   }
+  payload.role = normalizeRole(payload.role);
+  if (payload.role === "admin" && payload.realm === "*") {
+    if (Number(payload.exp || 0) < Math.floor(Date.now() / 1000)) return { ok: false, error: "token expired" };
+    return { ok: true, payload };
+  }
   if (payload.realm !== realm) return { ok: false, error: "wrong realm" };
   if (Number(payload.exp || 0) < Math.floor(Date.now() / 1000)) return { ok: false, error: "token expired" };
-  payload.role = normalizeRole(payload.role);
   return { ok: true, payload };
 }
 

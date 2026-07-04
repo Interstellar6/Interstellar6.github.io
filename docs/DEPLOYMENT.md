@@ -39,11 +39,11 @@ npx wrangler secret put RELUMEOW_ACCESS_SALT
 npx wrangler secret put RELUMEOW_ACCESS_TOKEN_SECRET
 npx wrangler secret put RELUMEOW_ACCESS_VIDEO2MESH_HASH
 npx wrangler secret put RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH
-npx wrangler secret put RELUMEOW_ADMIN_VIDEO2MESH_HASH
-npx wrangler secret put RELUMEOW_ADMIN_CHALLENGECUP_AGENT_SYSTEM_HASH
+npx wrangler secret put RELUMEOW_ADMIN_USERNAME
+npx wrangler secret put RELUMEOW_ADMIN_PASSWORD_HASH
 ```
 
-Cloudflare 文档要求敏感值使用 secrets；`wrangler secret put` 会创建并部署带新 secret 的 Worker 版本。`RELUMEOW_ACCESS_*_HASH` 是访客浏览/评论口令，`RELUMEOW_ADMIN_*_HASH` 是管理员编辑/上传口令；两类口令不要共用。
+Cloudflare 文档要求敏感值使用 secrets；`wrangler secret put` 会创建并部署带新 secret 的 Worker 版本。`RELUMEOW_ACCESS_*_HASH` 是项目访客浏览/评论口令；`RELUMEOW_ADMIN_USERNAME` 和 `RELUMEOW_ADMIN_PASSWORD_HASH` 是全站唯一管理员账号。管理员账号不绑定单个项目，登录后可管理所有项目空间。
 
 ## Cloudflare Workers Static Assets
 
@@ -64,7 +64,7 @@ Cloudflare 文档要求敏感值使用 secrets；`wrangler secret put` 会创建
 
 | 路由 | 作用 |
 |---|---|
-| `/api/access/login` | 后台验证访客或管理员口令 hash，签发带 role 的短期 token |
+| `/api/access/login` | 后台验证项目访客口令或全站管理员账号，签发带 role 的短期 token |
 | `/api/access/verify` | 验证 token 是否仍然有效，并返回 role |
 | `/api/projects/<realm>/data` | 验证后返回受保护项目 Markdown JSON |
 | `/api/projects/<realm>/assets/...` | 验证后返回受保护项目图片 |

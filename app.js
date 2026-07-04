@@ -11,6 +11,7 @@
     : (configuredApiUrl || site.api_url || window.location.origin)
   ).replace(/\/+$/, "");
   const ACCESS_KEY = "relumeow-access-v1";
+  const ADMIN_REALM = "__admin__";
   const THEME_KEY = "relumeow-theme-v1";
   const DIRECTORY_KEY = "relumeow-directory-expanded-v1";
   const DISCUSSION_KEY = "relumeow-discussion-v1";
@@ -28,6 +29,7 @@
   let editMode = false;
   let renderedDoc = null;
   let docOverrides = {};
+  let outlineObserver = null;
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -48,6 +50,10 @@
     themeLabel: $("themeLabel"),
     railToggle: $("railToggle"),
     railResizer: $("railResizer"),
+    tocToggle: $("tocToggle"),
+    tocEdgeToggle: $("tocEdgeToggle"),
+    tocResizer: $("tocResizer"),
+    outlineTree: $("outlineTree"),
   };
 
   const escapeHtml = (value) => String(value ?? "")
@@ -111,27 +117,44 @@
     return role === "admin" ? "admin" : "visitor";
   }
 
-  function saveAccess(realm, token, expiresAt, role = "visitor") {
+  function saveAccess(realm, token, expiresAt, role = "visitor", username = "") {
     try {
       const all = JSON.parse(localStorage.getItem(ACCESS_KEY) || "{}");
-      all[realm] = { token, expiresAt, role: normalizedRole(role) };
+      all[realm] = { token, expiresAt, role: normalizedRole(role), username };
       localStorage.setItem(ACCESS_KEY, JSON.stringify(all));
     } catch (_error) {
       // Access can still work for the current response; persistence is best-effort.
     }
   }
 
+  function adminEntry() {
+    const stored = storedAccess(ADMIN_REALM);
+    if (!stored?.token) return null;
+    return {
+      project: project || projects[0] || { slug: "admin", title: "relumeow.top", mark: "管", route: "/home/" },
+      realm: ADMIN_REALM,
+      token: stored.token,
+      expiresAt: stored.expiresAt,
+      role: "admin",
+      username: stored.username || "relumeow",
+    };
+  }
+
   function accessEntries() {
-    return projects
+    const admin = adminEntry();
+    const entries = projects
       .map((item) => {
         const realm = item.access?.realm || item.slug;
         const stored = storedAccess(realm);
         return stored?.token ? { project: item, realm, ...stored, role: normalizedRole(stored.role) } : null;
       })
       .filter(Boolean);
+    return admin ? [admin, ...entries] : entries;
   }
 
   function primaryAccessEntry() {
+    const admin = adminEntry();
+    if (admin) return admin;
     if (project) {
       const realm = project.access?.realm || project.slug;
       const stored = storedAccess(realm);
@@ -233,6 +256,8 @@
   }
 
   function authHeadersForRealm(realm) {
+    const admin = adminEntry();
+    if (admin?.token) return { Authorization: `Bearer ${admin.token}` };
     const stored = storedAccess(realm);
     return stored?.token ? { Authorization: `Bearer ${stored.token}` } : {};
   }
@@ -240,8 +265,12 @@
   function initLayoutControls() {
     const saved = loadJson(LAYOUT_KEY, {});
     const width = Number(saved.railWidth || 292);
+    const tocWidth = Number(saved.tocWidth || 236);
+    const compact = window.matchMedia?.("(max-width: 1080px)")?.matches;
     setRailWidth(width);
-    setRailCollapsed(Boolean(saved.railCollapsed), { persist: false });
+    setTocWidth(tocWidth);
+    setRailCollapsed(compact ? true : Boolean(saved.railCollapsed), { persist: false });
+    setTocCollapsed(compact ? true : Boolean(saved.tocCollapsed), { persist: false });
   }
 
   function setRailWidth(width) {
@@ -264,6 +293,30 @@
 
   function toggleRail() {
     setRailCollapsed(!document.body.classList.contains("rail-collapsed"));
+  }
+
+  function setTocWidth(width) {
+    const next = Math.max(190, Math.min(380, Number(width) || 236));
+    document.documentElement.style.setProperty("--toc-width", `${next}px`);
+  }
+
+  function setTocCollapsed(collapsed, options = {}) {
+    document.body.classList.toggle("toc-collapsed", Boolean(collapsed));
+    els.tocToggle?.setAttribute("aria-pressed", collapsed ? "true" : "false");
+    els.tocToggle?.setAttribute("aria-label", collapsed ? "展开标题导航" : "隐藏标题导航");
+    els.tocEdgeToggle?.setAttribute("aria-pressed", collapsed ? "true" : "false");
+    els.tocEdgeToggle?.setAttribute("aria-label", collapsed ? "展开标题导航" : "隐藏标题导航");
+    if (options.persist !== false) {
+      const saved = loadJson(LAYOUT_KEY, {});
+      saved.tocCollapsed = Boolean(collapsed);
+      const currentWidth = getComputedStyle(document.documentElement).getPropertyValue("--toc-width");
+      saved.tocWidth = Number.parseInt(currentWidth, 10) || saved.tocWidth || 236;
+      saveJson(LAYOUT_KEY, saved);
+    }
+  }
+
+  function toggleToc() {
+    setTocCollapsed(!document.body.classList.contains("toc-collapsed"));
   }
 
   function initRailResize() {
@@ -297,6 +350,42 @@
       setRailWidth(current + (event.key === "ArrowRight" ? 16 : -16));
       const saved = loadJson(LAYOUT_KEY, {});
       saved.railWidth = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue("--rail-width"), 10) || current;
+      saveJson(LAYOUT_KEY, saved);
+      event.preventDefault();
+    });
+  }
+
+  function initTocResize() {
+    const resizer = els.tocResizer;
+    if (!resizer) return;
+    let startX = 0;
+    let startWidth = 236;
+    const finish = () => {
+      document.body.classList.remove("toc-resizing");
+      const saved = loadJson(LAYOUT_KEY, {});
+      saved.tocWidth = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue("--toc-width"), 10) || 236;
+      saveJson(LAYOUT_KEY, saved);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+    };
+    const move = (event) => {
+      setTocWidth(startWidth - (event.clientX - startX));
+    };
+    resizer.addEventListener("pointerdown", (event) => {
+      if (document.body.classList.contains("toc-collapsed")) return;
+      startX = event.clientX;
+      startWidth = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue("--toc-width"), 10) || 236;
+      document.body.classList.add("toc-resizing");
+      resizer.setPointerCapture?.(event.pointerId);
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", finish);
+    });
+    resizer.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const current = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue("--toc-width"), 10) || 236;
+      setTocWidth(current + (event.key === "ArrowLeft" ? 16 : -16));
+      const saved = loadJson(LAYOUT_KEY, {});
+      saved.tocWidth = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue("--toc-width"), 10) || current;
       saveJson(LAYOUT_KEY, saved);
       event.preventDefault();
     });
@@ -345,6 +434,23 @@
       return accessState;
     }
     const realm = project.access?.realm || project.slug;
+    const admin = adminEntry();
+    if (admin?.token) {
+      try {
+        const res = await fetch(`${API_URL}/api/access/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ realm, token: admin.token }),
+        });
+        const data = await res.json().catch(() => ({}));
+        accessState = { checked: true, allowed: Boolean(res.ok && data.ok && data.role === "admin"), reason: data.error || "" };
+        if (!accessState.allowed && res.status === 401) clearAccess(ADMIN_REALM);
+        return accessState;
+      } catch (error) {
+        accessState = { checked: true, allowed: false, reason: error.message || "verify failed" };
+        return accessState;
+      }
+    }
     const stored = storedAccess(realm);
     if (!stored?.token) {
       accessState = { checked: true, allowed: false, reason: "missing-token" };
@@ -370,9 +476,9 @@
     if (!project || !seed.protected || protectedDataLoaded) return;
     const realm = project.access?.realm || project.slug;
     const stored = storedAccess(realm);
-    if (!stored?.token) throw new Error("missing access token");
+    if (!stored?.token && !adminEntry()?.token) throw new Error("missing access token");
     const res = await fetch(`${API_URL}/api/projects/${encodeURIComponent(realm)}/data`, {
-      headers: { Authorization: `Bearer ${stored.token}` },
+      headers: authHeadersForRealm(realm),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
@@ -430,15 +536,20 @@
     return data;
   }
 
-  async function submitPasscode(realm, passcode, stayRoute, role = "visitor") {
+  async function submitPasscode(realm, passcode, stayRoute, role = "visitor", username = "") {
+    const isAdmin = normalizedRole(role) === "admin";
     const res = await fetch(`${API_URL}/api/access/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ realm, passcode, role: normalizedRole(role) }),
+      body: JSON.stringify(isAdmin
+        ? { role: "admin", username, password: passcode }
+        : { realm, passcode, role: "visitor" }
+      ),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok || !data.token) throw new Error(data.error || "口令验证失败");
-    saveAccess(realm, data.token, data.expires_at || "", data.role || role);
+    if (isAdmin) saveAccess(ADMIN_REALM, data.token, data.expires_at || "", "admin", data.username || username);
+    else saveAccess(realm, data.token, data.expires_at || "", data.role || role);
     if (stayRoute) window.location.href = stayRoute;
     else window.location.reload();
   }
@@ -523,7 +634,7 @@
     const entry = primaryAccessEntry();
     const signedIn = Boolean(entry);
     els.accountAvatar.textContent = signedIn ? (entry.role === "admin" ? "管" : (entry.project.mark || "访")) : "访";
-    els.accountLabel.textContent = signedIn ? (entry.role === "admin" ? "管理员" : "访客已登录") : "访客";
+    els.accountLabel.textContent = signedIn ? (entry.role === "admin" ? `管理员 ${entry.username || "relumeow"}` : "访客已登录") : "访客";
     els.accountButton.classList.toggle("signed-in", signedIn);
     els.accountButton.classList.toggle("admin-session", signedIn && entry.role === "admin");
     if (!els.accountPopover.hidden) renderAccountPopover();
@@ -581,12 +692,13 @@
     const active = primaryAccessEntry() || entries[0];
     const roleLabel = active.role === "admin" ? "管理员会话已验证" : "访客会话已验证";
     const canElevate = active.role !== "admin";
+    const activeTitle = active.role === "admin" ? `管理员 ${active.username || "relumeow"}` : active.project.title;
     els.accountPopover.innerHTML = `
       <section class="admin-card compact">
         <div class="admin-head">
-          <span class="account-avatar signed-in">${escapeHtml(active.project.mark || "管")}</span>
+          <span class="account-avatar signed-in">${active.role === "admin" ? "管" : escapeHtml(active.project.mark || "管")}</span>
           <span>
-            <strong>${escapeHtml(active.project.title)}</strong>
+            <strong>${escapeHtml(activeTitle)}</strong>
             <em>${escapeHtml(roleLabel)}</em>
           </span>
         </div>
@@ -613,21 +725,20 @@
 
   function renderAccountLoginForAdmin(active) {
     const targetProject = active?.project || project || projects[0];
-    const realm = targetProject?.access?.realm || targetProject?.slug || "";
     pendingLoginRoute = targetProject?.route || pendingLoginRoute || "/home/";
     els.accountPopover.innerHTML = `
       <form class="account-login" id="accountLoginForm">
         <h2>管理员登录</h2>
-        <p>输入管理员口令后可编辑正文、上传图片，并以管理员身份回复评论。</p>
-        <input name="realm" type="hidden" value="${escapeHtml(realm)}" />
+        <p>管理员账号全站唯一，登录后可管理所有项目空间。</p>
+        <input name="realm" type="hidden" value="${escapeHtml(targetProject?.access?.realm || targetProject?.slug || "")}" />
         <input name="role" type="hidden" value="admin" />
         <label>
-          <span>项目空间</span>
-          <input value="${escapeHtml(targetProject?.title || realm)}" disabled />
+          <span>管理员账号</span>
+          <input name="username" value="relumeow" autocomplete="username" required />
         </label>
         <label>
-          <span>管理员口令</span>
-          <input name="passcode" type="password" autocomplete="current-password" placeholder="Enter admin passcode" required />
+          <span>管理员密码</span>
+          <input name="passcode" type="password" autocomplete="current-password" placeholder="Enter admin password" required />
         </label>
         <button type="submit">进入管理</button>
         <p class="form-status" id="accountLoginStatus"></p>
@@ -645,13 +756,14 @@
       const data = new FormData(form);
       const realm = String(data.get("realm") || "");
       const role = normalizedRole(String(data.get("role") || "visitor"));
+      const username = String(data.get("username") || "");
       const passcode = String(data.get("passcode") || "");
       const realmField = form.elements.realm;
       const option = realmField?.options ? Array.from(realmField.options).find((item) => item.value === realm) : null;
       const target = pendingLoginRoute || option?.dataset.route || "/home/";
       status.textContent = "验证中...";
       try {
-        await submitPasscode(realm, passcode, target, role);
+        await submitPasscode(realm, passcode, target, role, username);
       } catch (error) {
         status.textContent = error.message || "验证失败";
       }
@@ -733,13 +845,18 @@
   function renderAdmin() {
     setVisible("home");
     renderHome();
-    openAccountPopover();
+    pendingLoginRoute = project?.route || pendingLoginRoute || "/home/";
+    els.accountPopover.hidden = false;
+    els.accountButton.setAttribute("aria-expanded", "true");
+    if (adminEntry()) renderAccountPopover();
+    else renderAccountLoginForAdmin(primaryAccessEntry() || { project: project || projects[0] });
   }
 
   function renderProjectLocked() {
     setVisible("project");
     els.routeLabel.textContent = project.title;
     els.pageTitle.textContent = project.title;
+    renderOutline(null, { message: "解锁后显示当前文档标题。" });
     els.documentPanel.innerHTML = `
       <section class="locked-panel">
         <div class="lock-symbol">⌕</div>
@@ -796,6 +913,7 @@
     if (!isEditing) bindTaskCheckboxes(doc, effectiveBody);
     bindDiscussionPanel(doc);
     if (!isEditing) bindSelectionAnnotations(doc);
+    renderOutline(doc, { editing: isEditing });
     loadRemoteDiscussions(doc.id).then((entry) => {
       if (activeDocId !== doc.id) return;
       activeDiscussion = entry;
@@ -807,9 +925,14 @@
 
   function canEditProject() {
     if (!project) return false;
-    const realm = project.access?.realm || project.slug;
     const entry = primaryAccessEntry();
-    return entry?.realm === realm && entry.role === "admin";
+    return entry?.role === "admin";
+  }
+
+  function currentAuthorName() {
+    const entry = primaryAccessEntry();
+    if (entry?.role === "admin") return `管理员 ${entry.username || "relumeow"}`;
+    return "访客";
   }
 
   function renderDocTools(doc, body, isEditing) {
@@ -1026,7 +1149,7 @@
       const entry = loadDiscussions(doc.id);
       const comment = {
         id: `c-${Date.now()}`,
-        author: "访客",
+        author: currentAuthorName(),
         text,
         createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
       };
@@ -1052,7 +1175,7 @@
       if (!text || !text.trim()) return;
       const reply = {
         id: `r-${Date.now()}`,
-        author: "访客",
+        author: currentAuthorName(),
         text: text.trim(),
         createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
         parentId: commentId,
@@ -1117,6 +1240,7 @@
         id: `a-${Date.now()}`,
         quote: activeSelection,
         text,
+        author: currentAuthorName(),
         createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
       };
       entry.annotations.unshift(annotation);
@@ -1139,8 +1263,8 @@
   async function hydrateProtectedImages(container) {
     if (!project || project.access?.mode !== "passcode") return;
     const realm = project.access?.realm || project.slug;
-    const stored = storedAccess(realm);
-    if (!stored?.token) return;
+    const headers = authHeadersForRealm(realm);
+    if (!headers.Authorization) return;
     const images = Array.from(container.querySelectorAll("img"));
     await Promise.all(images.map(async (img) => {
       const rawSrc = img.dataset.protectedSrc || img.getAttribute("src") || "";
@@ -1148,7 +1272,7 @@
       if (!url.pathname.startsWith(`/api/projects/${realm}/assets/`) && !url.pathname.startsWith(`/api/content-assets/${realm}/`)) return;
       try {
         const res = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${stored.token}` },
+          headers,
         });
         if (!res.ok) throw new Error(`image ${res.status}`);
         const blob = await res.blob();
@@ -1175,6 +1299,7 @@
     let mathLines = [];
     let table = [];
     let taskIndex = 0;
+    const headingCounts = {};
     const flushParagraph = () => {
       if (paragraph.length) {
         html += `<p>${inline(paragraph.join(" "))}</p>`;
@@ -1226,7 +1351,10 @@
         flushParagraph(); closeLists();
         const level = heading[1].length;
         const text = stripMarkdown(heading[2]);
-        html += `<h${level} id="${slugify(text)}">${inline(heading[2])}</h${level}>`;
+        const baseSlug = slugify(text);
+        headingCounts[baseSlug] = (headingCounts[baseSlug] || 0) + 1;
+        const headingId = headingCounts[baseSlug] === 1 ? baseSlug : `${baseSlug}-${headingCounts[baseSlug]}`;
+        html += `<h${level} id="${headingId}">${inline(heading[2])}</h${level}>`;
         return;
       }
       const unordered = /^(\s*)[-*]\s+(.+)$/.exec(line);
@@ -1254,6 +1382,71 @@
     if (inMath) html += renderFormula(mathLines.join("\n"), true);
     flushParagraph(); flushTable(); closeLists();
     return html;
+  }
+
+  function renderOutline(doc, options = {}) {
+    if (!els.outlineTree) return;
+    if (outlineObserver) {
+      outlineObserver.disconnect();
+      outlineObserver = null;
+    }
+    if (!doc) {
+      els.outlineTree.innerHTML = `<p class="outline-empty">${escapeHtml(options.message || "打开文档后显示标题。")}</p>`;
+      return;
+    }
+    if (options.editing) {
+      els.outlineTree.innerHTML = `<p class="outline-empty">编辑模式下保存后刷新标题导航。</p>`;
+      return;
+    }
+    const body = els.documentPanel?.querySelector(".doc-body");
+    const headings = Array.from(body?.querySelectorAll("h1, h2, h3") || [])
+      .map((heading, index) => {
+        if (!heading.id) heading.id = `${slugify(heading.textContent || "section")}-${index + 1}`;
+        return {
+          id: heading.id,
+          level: Math.min(3, Number(heading.tagName.slice(1)) || 1),
+          text: String(heading.textContent || "").trim() || `Section ${index + 1}`,
+        };
+      })
+      .filter((item) => item.text);
+    if (!headings.length) {
+      els.outlineTree.innerHTML = `<p class="outline-empty">这篇文档还没有可跳转标题。</p>`;
+      return;
+    }
+    els.outlineTree.innerHTML = headings.map((item) => `
+      <button class="outline-link outline-level-${item.level}" type="button" data-heading-id="${escapeHtml(item.id)}">
+        <span>${escapeHtml(item.text)}</span>
+      </button>
+    `).join("");
+    els.outlineTree.querySelectorAll("[data-heading-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const target = document.getElementById(button.dataset.headingId || "");
+        if (!target) return;
+        els.outlineTree.querySelectorAll(".active").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+    initOutlineSpy(headings);
+  }
+
+  function initOutlineSpy(headings) {
+    if (!("IntersectionObserver" in window)) return;
+    const links = new Map(Array.from(els.outlineTree.querySelectorAll("[data-heading-id]")).map((button) => [button.dataset.headingId, button]));
+    outlineObserver = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      const activeId = visible[0]?.target?.id;
+      if (!activeId || !links.has(activeId)) return;
+      links.forEach((button) => button.classList.remove("active"));
+      links.get(activeId)?.classList.add("active");
+    }, { rootMargin: "-14% 0px -70% 0px", threshold: [0, 1] });
+    headings.forEach((item) => {
+      const target = document.getElementById(item.id);
+      if (target) outlineObserver.observe(target);
+    });
+    links.get(headings[0]?.id)?.classList.add("active");
   }
 
   function preprocessMarkdown(markdown) {
@@ -1401,6 +1594,8 @@
   });
   els.themeToggle?.addEventListener("click", toggleTheme);
   els.railToggle?.addEventListener("click", toggleRail);
+  els.tocToggle?.addEventListener("click", toggleToc);
+  els.tocEdgeToggle?.addEventListener("click", toggleToc);
   window.addEventListener("hashchange", () => {
     if (project && accessState.allowed) renderProject();
   });
@@ -1418,6 +1613,7 @@
   initTheme();
   initLayoutControls();
   initRailResize();
+  initTocResize();
   route().catch((error) => {
     if (project) {
       const realm = project.access?.realm || project.slug;
