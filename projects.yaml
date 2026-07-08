@@ -108,10 +108,10 @@ projects:
         project-docs: 项目运行文档目录
     pinned_docs:
       - README.md
-      - contest-analysis/overview.md
-      - research-catalog/overview.md
-      - progress/overview.md
-      - project-docs/overview.md
+      - contest-analysis/README.md
+      - research-catalog/README.md
+      - progress/README.md
+      - project-docs/README.md
     catalog:
       category: 调研目录
       root: research-catalog/

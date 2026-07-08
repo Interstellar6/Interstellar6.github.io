@@ -589,7 +589,7 @@
           else expandedDirs.add(dirPath);
           saveExpandedDirs();
         }
-        if (button.dataset.docId) showDoc(button.dataset.docId || "", { keepDirectoryState: dirPath != null });
+        if (button.dataset.docId) showDoc(button.dataset.docId || "", { keepDirectoryState: dirPath != null, allowQueryOverride: false });
         else renderDirectoryTree();
       });
     });
@@ -878,14 +878,14 @@
     els.pageTitle.textContent = project.title;
     const hashDoc = location.hash.match(/^#\/doc\/(.+)$/)?.[1];
     const overview = docs.find((doc) => doc.is_overview && !doc.directory) || docs[0];
-    showDoc(hashDoc ? decodeURIComponent(hashDoc) : overview?.id || "", { skipHash: true });
+    showDoc(hashDoc ? decodeURIComponent(hashDoc) : overview?.id || "", { skipHash: true, allowQueryOverride: !hashDoc });
     renderAccount();
   }
 
   function showDoc(id, options = {}) {
     const query = activeQuery.trim().toLowerCase();
     let doc = docs.find((item) => item.id === id) || docs[0];
-    if (query) {
+    if (query && options.allowQueryOverride !== false) {
       const hit = docs.find((item) => [item.title, item.summary, item.category, (item.tags || []).join(" "), stripMarkdown(item.body)].join(" ").toLowerCase().includes(query));
       if (hit) doc = hit;
     }

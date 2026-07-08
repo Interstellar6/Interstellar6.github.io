@@ -27,6 +27,8 @@ class Doc:
     title: str
     category: str
     doc_type: str
+    research_stage: str
+    research_doc_role: str
     visibility: str
     summary: str
     source_path: str
@@ -46,6 +48,10 @@ def slugify(value: str, fallback: str = "doc") -> str:
     text = re.sub(r"[^a-z0-9\u4e00-\u9fff.-]+", "", text)
     text = text.strip(".-")
     return text or fallback
+
+
+def strip_suffix(value: str, suffix: str) -> str:
+    return value[: -len(suffix)] if suffix and value.endswith(suffix) else value
 
 
 def split_front_matter(text: str) -> tuple[dict[str, Any], str]:
@@ -171,6 +177,14 @@ def should_collect(relative: Path, overview_name: str, docs_root: Path) -> bool:
     if relative == Path(overview_name) and root_readme.exists():
         return False
     if name == "README.md":
+        meta = {}
+        try:
+            raw = (docs_root / relative).read_text(encoding="utf-8")
+            meta, _body = split_front_matter(raw)
+        except OSError:
+            meta = {}
+        if str(meta.get("research_doc_role") or "").strip() in {"root", "overview"}:
+            return True
         sibling = docs_root / relative.with_name(overview_name)
         return not sibling.exists()
     return True
@@ -261,10 +275,11 @@ def load_doc(
     relative = path.relative_to(docs_root)
     project_path = str(relative).replace("\\", "/")
     overview_name = project.get("navigation", {}).get("directory_overview", "overview.md")
-    is_overview = relative.name == overview_name or relative == Path("README.md")
+    research_role = str(meta.get("research_doc_role") or "").strip()
+    is_overview = relative.name in {overview_name, "README.md"}
     fallback = "Overview" if is_overview else relative.stem.replace("-", " ").replace("_", " ")
     title = str(meta.get("title") or extract_title(body, fallback)).strip()
-    doc_id = slugify(str(meta.get("id") or f"{project['slug']}-{project_path.removesuffix('.md')}"), "doc")
+    doc_id = slugify(str(meta.get("id") or f"{project['slug']}-{strip_suffix(project_path, '.md')}"), "doc")
     base_id = doc_id
     index = 2
     while doc_id in used_ids:
@@ -273,6 +288,8 @@ def load_doc(
     used_ids.add(doc_id)
     category = str(meta.get("category") or ("总目录" if relative.parent == Path(".") and is_overview else "项目文档")).strip()
     doc_type = str(meta.get("doc_type") or ("overview" if is_overview else "doc")).strip()
+    research_stage = str(meta.get("research_stage") or "").strip()
+    research_doc_role = research_role
     visibility = normalize_visibility(meta, project_path)
     body = prepend_lead_image_if_missing(project, docs_root, path, title, body)
     if visibility == "public":
@@ -295,6 +312,8 @@ def load_doc(
         title=title,
         category=category,
         doc_type=doc_type,
+        research_stage=research_stage,
+        research_doc_role=research_doc_role,
         visibility=visibility,
         summary=extract_summary(body, meta),
         source_path=f"{project['source']['docs_root'].rstrip('/')}/{project_path}",
@@ -386,6 +405,15 @@ def build_directory_tree(project: dict[str, Any], docs: list[Doc]) -> list[dict[
     return [node("")]
 
 
+def ordered_categories(project: dict[str, Any], docs: list[Doc]) -> list[str]:
+    discovered = {doc.category for doc in docs}
+    nav = project.get("navigation", {})
+    configured = nav.get("category_order", []) if isinstance(nav.get("category_order"), list) else []
+    ordered = [str(item) for item in configured if str(item) in discovered]
+    remaining = sorted(discovered.difference(ordered))
+    return ordered + remaining
+
+
 def write_jsonp(path: Path, variable: str, payload: dict[str, Any]) -> None:
     text = f"window.{variable} = " + json.dumps(payload, ensure_ascii=False, indent=2) + ";\n"
     path.write_text(text, encoding="utf-8")
@@ -397,6 +425,19 @@ def doc_to_public_dict(doc: Doc, include_body: bool) -> dict[str, Any]:
         payload["body"] = ""
         payload["headings"] = []
     return payload
+
+
+def copytree_merge(src: Path, dst: Path) -> None:
+    if not dst.exists():
+        shutil.copytree(src, dst)
+        return
+    for item in src.iterdir():
+        target = dst / item.name
+        if item.is_dir():
+            copytree_merge(item, target)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
 
 
 def copy_shell_files(target: Path) -> None:
@@ -412,7 +453,7 @@ def copy_shell_files(target: Path) -> None:
             else:
                 shutil.copy2(src, target / name)
     if ASSETS_DIR.exists():
-        shutil.copytree(ASSETS_DIR, target / "assets", dirs_exist_ok=True)
+        copytree_merge(ASSETS_DIR, target / "assets")
 
 
 def build_project(project: dict[str, Any], site_config: dict[str, Any]) -> tuple[Path, list[Doc], dict[str, Any]]:
@@ -425,7 +466,7 @@ def build_project(project: dict[str, Any], site_config: dict[str, Any]) -> tuple
     protected_asset_prefix = f"{api_url}/api/projects/{realm}/assets" if api_url.startswith("http") else f"/api/projects/{realm}/assets"
     docs = collect_docs(project, target, protected_asset_prefix)
     public_docs = [doc for doc in docs if doc.visibility == "public"]
-    categories = sorted({doc.category for doc in public_docs})
+    categories = ordered_categories(project, public_docs)
     tree = build_directory_tree(project, public_docs)
     project_public = public_project(project)
     project_public["doc_count"] = len(public_docs)
@@ -519,7 +560,7 @@ def build_home(site_config: dict[str, Any], summaries: list[dict[str, Any]]) -> 
         "projects": summaries,
     }
     write_jsonp(home / "site-data.js", "RELUMEOW_DATA", payload)
-    shutil.copytree(home, BUILD_DIR, dirs_exist_ok=True)
+    copytree_merge(home, BUILD_DIR)
 
 
 def write_project_route_summaries(project_payloads: list[dict[str, Any]], summaries: list[dict[str, Any]]) -> None:
