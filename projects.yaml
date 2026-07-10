@@ -21,7 +21,7 @@ projects:
       realm: video2mesh
       label: Video2Mesh 项目空间
     source:
-      repo: ../Video2Mesh
+      repo: ../Video2Mesh_codex_dev
       docs_root: docs/video2mesh
     navigation:
       directory_overview: overview.md
