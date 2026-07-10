@@ -1,5 +1,5 @@
 {
-  "version": "local-bedroom4-anysplat-semanticmesh-align-20260711",
+  "version": "local-bedroom4-anysplat-semanticmesh-robot-perf-20260711",
   "chunkSize": 20971520,
   "alignment": {
     "id": "anysplat_to_video2mesh_camera_umeyama_20260711",

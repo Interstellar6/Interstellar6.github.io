@@ -17,7 +17,7 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-align-20260711" />
+    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-robot-perf-20260711" />
   </head>
   <body>
     <canvas id="sceneCanvas" tabindex="0" aria-label="AnySplat 3DGS visual layer with semantic mesh collider proxy"></canvas>
@@ -48,26 +48,31 @@
           <div class="metric"><strong id="hitMetric">none</strong><span>ray hit</span></div>
           <div class="metric"><strong id="semanticMetric">none</strong><span>object id</span></div>
           <div class="metric"><strong id="fpsMetric">0</strong><span>fps</span></div>
+          <div class="metric"><strong id="robotMetric">loading</strong><span>robot</span></div>
         </div>
       </div>
 
       <div class="panel controls">
         <div class="control-row">
           <button id="toggleVisual" class="is-active" type="button">Visual 3DGS</button>
-          <button id="toggleCollider" class="is-active" type="button">Collider wire</button>
+          <button id="toggleCollider" type="button">Collider hidden</button>
           <button id="toggleSemantic" class="is-active" type="button">Semantic color</button>
           <button id="toggleCameraMode" type="button">Orbit Camera</button>
+          <button id="toggleRobot" class="is-active" type="button">Robot</button>
+          <button id="toggleRobotFollow" class="is-active" type="button">Follow Robot</button>
+          <button id="toggleQuality" type="button">Balanced</button>
           <button id="resetView" type="button">Reset View</button>
         </div>
         <div class="legend">
           <span><i class="swatch visual"></i> AnySplat Gaussian PLY：Spark 3DGS renderer，关闭视觉层 raycast</span>
           <span><i class="swatch mesh"></i> semantic mesh PLY：Mesh collider proxy，保留 object_id / probability / source_face</span>
+          <span><i class="swatch robot"></i> 小机器人：位置和移动只依赖 mesh collider 的地面探测</span>
           <span><i class="swatch ray"></i> 单击场景只命中 collider face，红点显示 raycast 结果</span>
         </div>
       </div>
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-align-20260711"></script>
+    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-robot-perf-20260711"></script>
   </body>
 </html>

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-align-20260711";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-robot-perf-20260711";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 const COLLIDER_MODES = ["wire", "solid", "hidden"];
 const COLLIDER_LABELS = {
@@ -10,6 +10,12 @@ const COLLIDER_LABELS = {
   solid: "solid",
   hidden: "hidden but active",
 };
+const QUALITY_MODES = ["balanced", "performance"];
+const QUALITY_LABELS = {
+  balanced: "balanced",
+  performance: "performance",
+};
+const ROBOT_UP = new THREE.Vector3(0, 1, 0);
 
 const canvas = document.querySelector("#sceneCanvas");
 const modeChip = document.querySelector("#modeChip");
@@ -18,14 +24,17 @@ const meshMetric = document.querySelector("#meshMetric");
 const hitMetric = document.querySelector("#hitMetric");
 const semanticMetric = document.querySelector("#semanticMetric");
 const fpsMetric = document.querySelector("#fpsMetric");
+const robotMetric = document.querySelector("#robotMetric");
 const toast = document.querySelector("#toast");
 
+const nativePixelRatio = Math.max(0.75, window.devicePixelRatio || 1);
+const initialPixelRatio = Math.min(nativePixelRatio, 1.35);
 const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true,
+  antialias: false,
   powerPreference: "high-performance",
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setPixelRatio(initialPixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x070a0d, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -73,7 +82,13 @@ const markerLayer = new THREE.Group();
 markerLayer.name = "raycast-hit-marker-layer";
 scene.add(markerLayer);
 
+const robotLayer = new THREE.Group();
+robotLayer.name = "mesh-ground-probe-robot-layer";
+scene.add(robotLayer);
+
 const raycaster = new THREE.Raycaster();
+const groundRaycaster = new THREE.Raycaster();
+const obstacleRaycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const clock = new THREE.Clock();
 const keyState = new Set();
@@ -81,9 +96,16 @@ const keyState = new Set();
 const state = {
   manifestVersion: "",
   showVisual: true,
-  colliderRenderMode: "wire",
+  colliderRenderMode: "hidden",
   semanticColor: true,
   cameraMode: "orbit",
+  qualityMode: "balanced",
+  targetPixelRatio: Number(initialPixelRatio.toFixed(2)),
+  actualPixelRatio: Number(initialPixelRatio.toFixed(2)),
+  adaptivePixelRatio: true,
+  fps: 0,
+  sampledWireFaces: 0,
+  wireSampleStride: 1,
   visualReady: false,
   colliderReady: false,
   visualUsesSpark: true,
@@ -111,12 +133,23 @@ const state = {
   transformRmseSceneUnits: null,
   lastHit: "none",
   lastHitInfo: null,
+  robotReady: false,
+  robotEnabled: true,
+  robotFollowCamera: true,
+  robotGrounded: false,
+  robotBlocked: false,
+  robotPosition: { x: 0, y: 0, z: 0 },
+  robotYaw: 0,
+  robotSpeed: 0,
   error: "",
 };
 
 let visualSplat = null;
 let colliderMesh = null;
 let colliderWire = null;
+let robotGroup = null;
+let robotGroundY = null;
+let robotBobPhase = 0;
 let pointerDown = null;
 let manifest = null;
 let colliderFaceSemantics = [];
@@ -163,6 +196,77 @@ function semanticColor(objectId) {
   ];
   const id = Math.abs(Number(objectId) || 0);
   return new THREE.Color(palette[id % palette.length]);
+}
+
+function clampFinite(value, min, max, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return THREE.MathUtils.clamp(parsed, min, max);
+}
+
+function applyRendererPixelRatio(value, { forceResize = false } = {}) {
+  const target = clampFinite(value, 0.75, Math.min(nativePixelRatio, 1.5), initialPixelRatio);
+  const current = renderer.getPixelRatio();
+  if (!forceResize && Math.abs(current - target) < 0.04) return;
+  renderer.setPixelRatio(target);
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  state.actualPixelRatio = Number(renderer.getPixelRatio().toFixed(2));
+  state.targetPixelRatio = Number(target.toFixed(2));
+}
+
+function qualityPixelRatioLimit() {
+  return state.qualityMode === "performance"
+    ? Math.min(nativePixelRatio, 1)
+    : Math.min(nativePixelRatio, 1.35);
+}
+
+function applyQualityMode({ announce = false } = {}) {
+  const limit = qualityPixelRatioLimit();
+  state.adaptivePixelRatio = state.qualityMode !== "performance";
+  applyRendererPixelRatio(limit, { forceResize: true });
+  if (colliderMesh && state.qualityMode === "performance" && state.colliderRenderMode === "wire") {
+    state.colliderRenderMode = "hidden";
+    applyColliderMode();
+  }
+  if (announce) showToast(`Quality: ${QUALITY_LABELS[state.qualityMode]}, DPR ${state.actualPixelRatio}.`);
+  updateHud();
+}
+
+function createSampledWireGeometry(geometry, maxFaces = 12000) {
+  const index = geometry.index;
+  const position = geometry.getAttribute("position");
+  const faceCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+  const stride = Math.max(1, Math.ceil(faceCount / maxFaces));
+  const sampledFaces = Math.ceil(faceCount / stride);
+  const linePositions = new Float32Array(sampledFaces * 18);
+  let offset = 0;
+
+  const writeVertex = (vertexIndex) => {
+    linePositions[offset] = position.getX(vertexIndex);
+    linePositions[offset + 1] = position.getY(vertexIndex);
+    linePositions[offset + 2] = position.getZ(vertexIndex);
+    offset += 3;
+  };
+  const writeEdge = (a, b) => {
+    writeVertex(a);
+    writeVertex(b);
+  };
+
+  for (let face = 0; face < faceCount; face += stride) {
+    const base = face * 3;
+    const a = index ? index.getX(base) : base;
+    const b = index ? index.getX(base + 1) : base + 1;
+    const c = index ? index.getX(base + 2) : base + 2;
+    writeEdge(a, b);
+    writeEdge(b, c);
+    writeEdge(c, a);
+  }
+
+  const wireGeometry = new THREE.BufferGeometry();
+  wireGeometry.setAttribute("position", new THREE.BufferAttribute(linePositions.subarray(0, offset), 3));
+  state.sampledWireFaces = sampledFaces;
+  state.wireSampleStride = stride;
+  return wireGeometry;
 }
 
 function identityRotationRows() {
@@ -330,6 +434,8 @@ function syncDebugState() {
     visualLayerVisible: visualLayer.visible,
     colliderLayerVisible: colliderLayer.visible,
     colliderVisible: state.colliderRenderMode !== "hidden",
+    rendererPixelRatio: Number(renderer.getPixelRatio().toFixed(3)),
+    robotVisible: Boolean(robotGroup?.visible),
   };
   window.__visualPhysicsDemoState = snapshot;
   document.documentElement.dataset.visualPhysicsState = JSON.stringify(snapshot);
@@ -341,6 +447,9 @@ function updateHud() {
   meshMetric.textContent = state.colliderReady ? formatCount(state.colliderFaces) : "loading";
   hitMetric.textContent = state.lastHitInfo ? `face ${state.lastHitInfo.faceIndex}` : "none";
   semanticMetric.textContent = state.lastHitInfo ? `id ${state.lastHitInfo.objectId}` : "none";
+  robotMetric.textContent = state.robotReady
+    ? (state.robotGrounded ? `${state.robotSpeed.toFixed(1)} m/s` : "air")
+    : "loading";
   modeChip.textContent = [
     state.visualReady ? "AnySplat Gaussian PLY visual ready" : "loading visual PLY",
     state.colliderReady ? "semantic PLY collider ready" : "loading collider PLY",
@@ -349,6 +458,8 @@ function updateHud() {
       : `${state.transformSource}${state.transformRmseSceneUnits ? ` rmse ${state.transformRmseSceneUnits}` : ""}`,
     `${COLLIDER_LABELS[state.colliderRenderMode]} collider`,
     `${state.cameraMode} camera`,
+    `${QUALITY_LABELS[state.qualityMode]} dpr ${state.actualPixelRatio}`,
+    state.robotEnabled ? "robot uses mesh ground probe" : "robot hidden",
     "raycast ignores visual splats",
   ].join(" · ");
   syncDebugState();
@@ -410,7 +521,7 @@ async function loadVisualSplat(transform) {
     fileBytes: bytes,
     fileName: asset.fileName,
     fileType: asset.fileType,
-    lod: false,
+    lod: true,
     raycastable: false,
     onProgress: (event) => {
       if (!event.total) return;
@@ -533,15 +644,15 @@ async function loadColliderMesh() {
   colliderLayer.add(colliderMesh);
 
   colliderWire = new THREE.LineSegments(
-    new THREE.WireframeGeometry(parsed.geometry),
+    createSampledWireGeometry(parsed.geometry),
     new THREE.LineBasicMaterial({
       color: 0xefb35f,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.5,
       depthWrite: false,
     })
   );
-  colliderWire.name = "semantic PLY collider wire overlay";
+  colliderWire.name = "semantic PLY collider sampled wire overlay";
   colliderWire.raycast = () => {};
   colliderLayer.add(colliderWire);
 
@@ -582,6 +693,287 @@ function applySemanticColorMode() {
     }
   }
   color.needsUpdate = true;
+}
+
+function createRobot() {
+  const group = new THREE.Group();
+  group.name = "Video2Mesh mesh-proxy robot";
+
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x58d7c9,
+    roughness: 0.48,
+    metalness: 0.16,
+    emissive: 0x092e2a,
+    emissiveIntensity: 0.42,
+  });
+  const accentMaterial = new THREE.MeshStandardMaterial({
+    color: 0xefb35f,
+    roughness: 0.58,
+    metalness: 0.08,
+    emissive: 0x2b1804,
+    emissiveIntensity: 0.35,
+  });
+  const darkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x11191c,
+    roughness: 0.62,
+    metalness: 0.05,
+  });
+  const eyeMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0x58d7c9,
+    emissiveIntensity: 1.2,
+    roughness: 0.2,
+  });
+
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.58, 6, 14), bodyMaterial);
+  body.position.y = 0.78;
+  group.add(body);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 16), accentMaterial);
+  head.scale.set(1.08, 0.88, 1.08);
+  head.position.y = 1.34;
+  group.add(head);
+
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.08, 0.045), eyeMaterial);
+  visor.position.set(0, 1.38, 0.255);
+  group.add(visor);
+
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.38, 8), accentMaterial);
+  antenna.position.set(0.12, 1.68, 0);
+  antenna.rotation.z = -0.24;
+  group.add(antenna);
+
+  const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 8), eyeMaterial);
+  antennaTip.position.set(0.165, 1.87, 0);
+  group.add(antennaTip);
+
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.44, 4, 10), darkMaterial);
+  leftArm.position.set(-0.42, 0.86, 0.02);
+  leftArm.rotation.z = 0.2;
+  group.add(leftArm);
+
+  const rightArm = leftArm.clone();
+  rightArm.position.x = 0.42;
+  rightArm.rotation.z = -0.2;
+  group.add(rightArm);
+
+  const footGeometry = new THREE.BoxGeometry(0.28, 0.12, 0.34);
+  const leftFoot = new THREE.Mesh(footGeometry, darkMaterial);
+  leftFoot.position.set(-0.17, 0.08, 0.05);
+  group.add(leftFoot);
+
+  const rightFoot = leftFoot.clone();
+  rightFoot.position.x = 0.17;
+  group.add(rightFoot);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.52, 0.012, 8, 40),
+    new THREE.MeshBasicMaterial({ color: 0x58d7c9, transparent: true, opacity: 0.52 })
+  );
+  ring.name = "robot ground probe ring";
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.035;
+  group.add(ring);
+
+  group.traverse((child) => {
+    if (child.isMesh) child.raycast = () => {};
+  });
+  group.userData.height = 1.72;
+  group.userData.groundOffset = 0.02;
+  group.visible = state.robotEnabled;
+  return group;
+}
+
+function getColliderProbeHeights() {
+  if (!colliderBounds) return { originY: 40, range: 120 };
+  const size = boxSize(colliderBounds);
+  return {
+    originY: colliderBounds.max.y + Math.max(4, size.y * 0.25),
+    range: Math.max(16, size.y + 12),
+  };
+}
+
+function groundProbe(position) {
+  if (!colliderMesh) return null;
+  const { originY, range } = getColliderProbeHeights();
+  groundRaycaster.set(
+    new THREE.Vector3(position.x, originY, position.z),
+    new THREE.Vector3(0, -1, 0)
+  );
+  groundRaycaster.near = 0;
+  groundRaycaster.far = range;
+  const hits = groundRaycaster.intersectObject(colliderMesh, false);
+  if (!hits.length) return null;
+  const walkable = hits.find((hit) => {
+    const normal = hit.face?.normal.clone() || ROBOT_UP.clone();
+    normal.transformDirection(hit.object.matrixWorld);
+    return normal.dot(ROBOT_UP) > 0.08;
+  });
+  return walkable || hits[0];
+}
+
+function isRobotStepBlocked(fromPosition, toPosition) {
+  if (!colliderMesh) return false;
+  const direction = toPosition.clone().sub(fromPosition);
+  direction.y = 0;
+  const distance = direction.length();
+  if (distance < 1e-4) return false;
+  direction.normalize();
+  const origin = fromPosition.clone();
+  origin.y += 0.58;
+  obstacleRaycaster.set(origin, direction);
+  obstacleRaycaster.near = 0.04;
+  obstacleRaycaster.far = Math.min(0.72, distance + 0.24);
+  const hits = obstacleRaycaster.intersectObject(colliderMesh, false);
+  return hits.some((hit) => {
+    const normal = hit.face?.normal.clone() || ROBOT_UP.clone();
+    normal.transformDirection(hit.object.matrixWorld);
+    return Math.abs(normal.y) < 0.52;
+  });
+}
+
+function spawnRobotAtBounds() {
+  if (!colliderMesh || !colliderBounds) return;
+  if (!robotGroup) {
+    robotGroup = createRobot();
+    robotLayer.add(robotGroup);
+  }
+
+  const center = boxCenter(colliderBounds);
+  const size = boxSize(colliderBounds);
+  const candidates = [
+    center.clone(),
+    center.clone().add(new THREE.Vector3(size.x * -0.12, 0, size.z * -0.12)),
+    center.clone().add(new THREE.Vector3(size.x * 0.16, 0, size.z * -0.08)),
+    center.clone().add(new THREE.Vector3(size.x * -0.18, 0, size.z * 0.1)),
+    center.clone().add(new THREE.Vector3(size.x * 0.08, 0, size.z * 0.18)),
+  ];
+
+  let spawnHit = null;
+  for (const candidate of candidates) {
+    spawnHit = groundProbe(candidate);
+    if (spawnHit) break;
+  }
+  const spawn = spawnHit ? spawnHit.point.clone() : center;
+  spawn.y += robotGroup.userData.groundOffset;
+  robotGroup.position.copy(spawn);
+  robotGroup.rotation.y = Math.atan2(camera.position.x - spawn.x, camera.position.z - spawn.z);
+  robotGroundY = spawn.y;
+
+  state.robotReady = true;
+  state.robotGrounded = Boolean(spawnHit);
+  state.robotPosition = roundedVector(robotGroup.position);
+  state.robotYaw = Number(robotGroup.rotation.y.toFixed(4));
+  if (state.robotFollowCamera) updateRobotFollowCamera(0, true);
+  updateHud();
+}
+
+function getCameraPlanarBasis() {
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  if (forward.lengthSq() < 1e-5) forward.set(0, 0, -1);
+  forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  return { forward, right };
+}
+
+function getRobotMoveVector() {
+  const { forward, right } = getCameraPlanarBasis();
+  const move = new THREE.Vector3();
+  if (keyState.has("KeyW") || keyState.has("ArrowUp")) move.add(forward);
+  if (keyState.has("KeyS") || keyState.has("ArrowDown")) move.sub(forward);
+  if (keyState.has("KeyA") || keyState.has("ArrowLeft")) move.sub(right);
+  if (keyState.has("KeyD") || keyState.has("ArrowRight")) move.add(right);
+  if (move.lengthSq() > 0) move.normalize();
+  return move;
+}
+
+function updateRobot(dt) {
+  if (!robotGroup || !state.robotEnabled) {
+    state.robotSpeed = 0;
+    return;
+  }
+  if (state.cameraMode !== "orbit") {
+    state.robotSpeed = 0;
+    return;
+  }
+
+  const move = getRobotMoveVector();
+  const isMoving = move.lengthSq() > 0;
+  const speed = (keyState.has("ShiftLeft") || keyState.has("ShiftRight")) ? 4.8 : 2.35;
+  state.robotBlocked = false;
+  state.robotSpeed = isMoving ? speed : 0;
+
+  if (isMoving) {
+    const current = robotGroup.position.clone();
+    const target = current.clone().addScaledVector(move, speed * dt);
+    if (!isRobotStepBlocked(current, target)) {
+      const hit = groundProbe(target);
+      if (hit) {
+        const next = hit.point.clone();
+        next.y += robotGroup.userData.groundOffset;
+        const maxStep = 0.78;
+        if (robotGroundY == null || Math.abs(next.y - robotGroundY) <= maxStep) {
+          robotGroup.position.lerp(next, 0.82);
+          robotGroundY = robotGroup.position.y;
+          state.robotGrounded = true;
+        } else {
+          state.robotBlocked = true;
+        }
+      } else {
+        state.robotBlocked = true;
+        state.robotGrounded = false;
+      }
+    } else {
+      state.robotBlocked = true;
+    }
+
+    const targetYaw = Math.atan2(move.x, move.z);
+    const yawDelta = Math.atan2(
+      Math.sin(targetYaw - robotGroup.rotation.y),
+      Math.cos(targetYaw - robotGroup.rotation.y)
+    );
+    robotGroup.rotation.y += yawDelta * Math.min(1, dt * 12);
+    robotBobPhase += dt * speed * 6.2;
+    robotGroup.scale.y = 1 + Math.sin(robotBobPhase) * 0.025;
+  } else {
+    robotBobPhase += dt * 1.8;
+    robotGroup.scale.y = 1 + Math.sin(robotBobPhase) * 0.008;
+  }
+
+  state.robotPosition = roundedVector(robotGroup.position);
+  state.robotYaw = Number(robotGroup.rotation.y.toFixed(4));
+  if (state.robotFollowCamera) updateRobotFollowCamera(dt);
+}
+
+function updateRobotFollowCamera(dt, immediate = false) {
+  if (!robotGroup || state.cameraMode !== "orbit") return;
+  const target = robotGroup.position.clone().add(new THREE.Vector3(0, 0.82, 0));
+  const yaw = robotGroup.rotation.y;
+  const followOffset = new THREE.Vector3(
+    Math.sin(yaw + Math.PI) * 4.8,
+    2.15,
+    Math.cos(yaw + Math.PI) * 4.8
+  );
+  const desiredCamera = target.clone().add(followOffset);
+  const alpha = immediate ? 1 : 1 - Math.pow(0.002, Math.max(dt, 0.001));
+  controls.target.lerp(target, alpha);
+  camera.position.lerp(desiredCamera, alpha * 0.68);
+  controls.update();
+}
+
+function updateAdaptiveQuality(fps) {
+  if (!state.adaptivePixelRatio || state.qualityMode !== "balanced") return;
+  const current = renderer.getPixelRatio();
+  const ceiling = qualityPixelRatioLimit();
+  if (fps < 24 && current > 0.78) {
+    applyRendererPixelRatio(Math.max(0.8, current - 0.12), { forceResize: true });
+    return;
+  }
+  if (fps > 48 && current < ceiling - 0.06) {
+    applyRendererPixelRatio(Math.min(ceiling, current + 0.06), { forceResize: true });
+  }
 }
 
 function frameCameraToBounds(bounds, force = false) {
@@ -726,6 +1118,7 @@ function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
   renderer.setSize(width, height, false);
+  applyRendererPixelRatio(qualityPixelRatioLimit());
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
 }
@@ -736,10 +1129,17 @@ function setLayerVisibility() {
   if (visualSplat) visualSplat.visible = state.showVisual;
   document.querySelector("#toggleVisual").classList.toggle("is-active", state.showVisual);
   document.querySelector("#toggleCollider").classList.toggle("is-active", state.colliderRenderMode !== "hidden");
+  document.querySelector("#toggleCollider").textContent = `Collider ${state.colliderRenderMode}`;
   document.querySelector("#toggleSemantic").classList.toggle("is-active", state.semanticColor);
   document.querySelector("#toggleCameraMode").classList.toggle("is-active", state.cameraMode === "fly");
   document.querySelector("#toggleCameraMode").textContent = state.cameraMode === "fly" ? "Fly Camera" : "Orbit Camera";
+  document.querySelector("#toggleRobot").classList.toggle("is-active", state.robotEnabled);
+  document.querySelector("#toggleRobotFollow").classList.toggle("is-active", state.robotFollowCamera);
+  document.querySelector("#toggleQuality").classList.toggle("is-active", state.qualityMode === "performance");
+  document.querySelector("#toggleQuality").textContent = state.qualityMode === "performance" ? "Performance" : "Balanced";
   controls.enabled = state.cameraMode === "orbit";
+  robotLayer.visible = state.robotEnabled;
+  if (robotGroup) robotGroup.visible = state.robotEnabled;
   applyColliderMode();
   updateHud();
 }
@@ -748,7 +1148,9 @@ function bindEvents() {
   window.addEventListener("resize", resize);
   window.addEventListener("keydown", (event) => {
     keyState.add(event.code);
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
+    if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) {
+      event.preventDefault();
+    }
   });
   window.addEventListener("keyup", (event) => keyState.delete(event.code));
   canvas.addEventListener("pointerdown", onPointerDown);
@@ -776,7 +1178,30 @@ function bindEvents() {
     setLayerVisibility();
     showToast(state.cameraMode === "fly" ? "Fly camera: drag to look, WASD move, Q/E down/up." : "Orbit camera enabled.");
   });
-  document.querySelector("#resetView").addEventListener("click", () => frameCameraToBounds(colliderBounds, true));
+  document.querySelector("#toggleRobot").addEventListener("click", () => {
+    state.robotEnabled = !state.robotEnabled;
+    setLayerVisibility();
+    showToast(state.robotEnabled ? "Robot enabled on mesh collider." : "Robot hidden; collider raycast stays active.");
+  });
+  document.querySelector("#toggleRobotFollow").addEventListener("click", () => {
+    state.robotFollowCamera = !state.robotFollowCamera;
+    if (state.robotFollowCamera && robotGroup) updateRobotFollowCamera(0, true);
+    setLayerVisibility();
+    showToast(state.robotFollowCamera ? "Camera follows robot." : "Camera follow disabled.");
+  });
+  document.querySelector("#toggleQuality").addEventListener("click", () => {
+    state.qualityMode = nextValue(QUALITY_MODES, state.qualityMode);
+    applyQualityMode({ announce: true });
+    setLayerVisibility();
+  });
+  document.querySelector("#resetView").addEventListener("click", () => {
+    if (state.robotEnabled && state.robotFollowCamera && robotGroup && state.cameraMode === "orbit") {
+      updateRobotFollowCamera(0, true);
+      showToast("View reset to robot follow camera.");
+      return;
+    }
+    frameCameraToBounds(colliderBounds, true);
+  });
   exposeDebugApi();
 }
 
@@ -791,8 +1216,10 @@ async function init() {
     const transform = calculateVisualToColliderTransform(visualBox, colliderBox, manifest.alignment);
     await loadColliderMesh();
     frameCameraToBounds(colliderBounds);
+    spawnRobotAtBounds();
     await loadVisualSplat(transform);
     applySemanticColorMode();
+    applyQualityMode();
     setLayerVisibility();
     syncDebugState();
   } catch (error) {
@@ -807,13 +1234,17 @@ async function init() {
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.04);
   updateFlyCamera(dt);
+  updateRobot(dt);
   if (state.cameraMode === "orbit") controls.update();
   sparkRenderer.render(scene, camera);
 
   frameCount += 1;
   const now = performance.now();
   if (now - lastFpsUpdate > 500) {
-    fpsMetric.textContent = Math.round((frameCount * 1000) / (now - lastFpsUpdate || 1)).toString();
+    state.fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate || 1));
+    fpsMetric.textContent = state.fps.toString();
+    updateAdaptiveQuality(state.fps);
+    updateHud();
     frameCount = 0;
     lastFpsUpdate = now;
   }
