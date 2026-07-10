@@ -30,6 +30,7 @@
   let renderedDoc = null;
   let docOverrides = {};
   let outlineObserver = null;
+  const searchFieldCache = new Map();
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -502,8 +503,10 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || "overlay unavailable");
       docOverrides = data.docs && typeof data.docs === "object" ? data.docs : {};
+      searchFieldCache.clear();
     } catch (_error) {
       docOverrides = {};
+      searchFieldCache.clear();
     }
   }
 
@@ -518,6 +521,7 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error || "保存失败");
     docOverrides[docId] = { body: data.body || body, updatedAt: data.updatedAt || new Date().toISOString() };
+    searchFieldCache.clear();
     return docOverrides[docId];
   }
 
@@ -589,8 +593,10 @@
           else expandedDirs.add(dirPath);
           saveExpandedDirs();
         }
-        if (button.dataset.docId) showDoc(button.dataset.docId || "", { keepDirectoryState: dirPath != null, allowQueryOverride: false });
-        else renderDirectoryTree();
+        if (button.dataset.docId) {
+          clearSearchInput();
+          showDoc(button.dataset.docId || "", { keepDirectoryState: dirPath != null, allowQueryOverride: false });
+        } else renderDirectoryTree();
       });
     });
   }
@@ -876,6 +882,11 @@
     setVisible("project");
     els.routeLabel.textContent = project.title;
     els.pageTitle.textContent = project.title;
+    if (activeQuery.trim()) {
+      renderSearchResults(activeQuery);
+      renderAccount();
+      return;
+    }
     const hashDoc = location.hash.match(/^#\/doc\/(.+)$/)?.[1];
     const overview = docs.find((doc) => doc.is_overview && !doc.directory) || docs[0];
     showDoc(hashDoc ? decodeURIComponent(hashDoc) : overview?.id || "", { skipHash: true, allowQueryOverride: !hashDoc });
@@ -886,7 +897,7 @@
     const query = activeQuery.trim().toLowerCase();
     let doc = docs.find((item) => item.id === id) || docs[0];
     if (query && options.allowQueryOverride !== false) {
-      const hit = docs.find((item) => [item.title, item.summary, item.category, (item.tags || []).join(" "), stripMarkdown(item.body)].join(" ").toLowerCase().includes(query));
+      const hit = searchDocs(query)[0]?.doc;
       if (hit) doc = hit;
     }
     if (!doc) return;
@@ -921,6 +932,224 @@
       refreshDiscussionPanel(entry);
     });
     renderDirectoryTree();
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[_/\\|.,:;()[\]{}"'`~!?@#$%^&*=+<>-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function compactSearchText(value) {
+    return normalizeSearchText(value).replace(/\s+/g, "");
+  }
+
+  function searchTokens(rawQuery) {
+    return normalizeSearchText(rawQuery).split(/\s+/).filter(Boolean);
+  }
+
+  function docSearchText(doc) {
+    return [
+      doc.title,
+      doc.summary,
+      doc.category,
+      doc.project_path,
+      (doc.tags || []).join(" "),
+      stripMarkdown(doc.body),
+    ].join(" ");
+  }
+
+  function searchFields(doc) {
+    const cacheKey = `${doc.id || ""}::${doc.updated || ""}::${Boolean(docOverrides[doc.id]?.body)}`;
+    if (searchFieldCache.has(cacheKey)) return searchFieldCache.get(cacheKey);
+    const title = normalizeSearchText(doc.title);
+    const summary = normalizeSearchText(doc.summary);
+    const category = normalizeSearchText(doc.category);
+    const path = normalizeSearchText(doc.project_path);
+    const tags = normalizeSearchText((doc.tags || []).join(" "));
+    const bodySource = docOverrides[doc.id]?.body || doc.body;
+    const body = normalizeSearchText(stripMarkdown(bodySource));
+    const compact = {
+      title: compactSearchText(doc.title),
+      summary: compactSearchText(doc.summary),
+      category: compactSearchText(doc.category),
+      path: compactSearchText(doc.project_path),
+      tags: compactSearchText((doc.tags || []).join(" ")),
+      body: compactSearchText(stripMarkdown(bodySource)),
+    };
+    const terms = new Set([title, summary, category, path, tags].join(" ").split(/\s+/).filter((term) => term.length >= 3));
+    const fields = { title, summary, category, path, tags, body, compact, terms: Array.from(terms) };
+    searchFieldCache.set(cacheKey, fields);
+    return fields;
+  }
+
+  function boundedEditDistance(a, b, maxDistance) {
+    if (!a || !b) return maxDistance + 1;
+    if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+    const prev = Array.from({ length: b.length + 1 }, (_item, index) => index);
+    const curr = Array(b.length + 1).fill(0);
+    for (let i = 1; i <= a.length; i += 1) {
+      curr[0] = i;
+      let rowMin = curr[0];
+      for (let j = 1; j <= b.length; j += 1) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+        rowMin = Math.min(rowMin, curr[j]);
+      }
+      if (rowMin > maxDistance) return maxDistance + 1;
+      for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+    }
+    return prev[b.length];
+  }
+
+  function editDistanceLimit(length) {
+    if (length < 4) return 0;
+    if (length <= 5) return 1;
+    if (length <= 9) return 2;
+    return 3;
+  }
+
+  function subsequenceScore(needle, haystack, baseScore) {
+    if (needle.length < 3 || !haystack) return 0;
+    let cursor = 0;
+    let first = -1;
+    let last = -1;
+    for (const char of needle) {
+      const hit = haystack.indexOf(char, cursor);
+      if (hit === -1) return 0;
+      if (first === -1) first = hit;
+      last = hit;
+      cursor = hit + 1;
+    }
+    const span = Math.max(1, last - first + 1);
+    const looseness = Math.max(0, span - needle.length);
+    return Math.max(1, baseScore - Math.min(36, looseness * 3));
+  }
+
+  function tokenScore(token, fields) {
+    if (!token) return 0;
+    const compactToken = compactSearchText(token);
+    const directChecks = [
+      [fields.title, 180], [fields.path, 90], [fields.tags, 76], [fields.category, 70], [fields.summary, 52], [fields.body, 18],
+      [fields.compact.title, 170], [fields.compact.path, 88], [fields.compact.tags, 72], [fields.compact.category, 66], [fields.compact.summary, 48], [fields.compact.body, 14],
+    ];
+    let score = 0;
+    directChecks.forEach(([field, weight]) => {
+      if (field && field.includes(token)) score = Math.max(score, weight);
+      if (compactToken && field && field.includes(compactToken)) score = Math.max(score, Math.max(1, weight - 4));
+    });
+    const limit = editDistanceLimit(compactToken.length);
+    if (limit > 0) {
+      fields.terms.forEach((term) => {
+        const compactTerm = compactSearchText(term);
+        const distance = boundedEditDistance(compactToken, compactTerm, limit);
+        if (distance <= limit) score = Math.max(score, 116 - distance * 24);
+      });
+    }
+    score = Math.max(
+      score,
+      subsequenceScore(compactToken, fields.compact.title, 82),
+      subsequenceScore(compactToken, fields.compact.path, 48),
+      subsequenceScore(compactToken, fields.compact.tags, 42),
+      subsequenceScore(compactToken, fields.compact.category, 38),
+      subsequenceScore(compactToken, fields.compact.summary, 30),
+    );
+    return score;
+  }
+
+  function searchDocs(rawQuery) {
+    const query = normalizeSearchText(rawQuery);
+    if (!query) return [];
+    const compactQuery = compactSearchText(query);
+    const tokens = searchTokens(query);
+    return docs
+      .map((doc) => {
+        const fields = searchFields(doc);
+        const wholeScore = tokenScore(query, fields);
+        const compactWholeScore = compactQuery === query ? 0 : tokenScore(compactQuery, fields);
+        const tokenScores = tokens.map((token) => tokenScore(token, fields));
+        const fuzzyMatched = tokenScores.length ? tokenScores.every(Boolean) : false;
+        const matched = wholeScore || compactWholeScore || fuzzyMatched;
+        if (!matched) return null;
+        const titleBoost = fields.compact.title === compactQuery ? 240 : fields.compact.title.includes(compactQuery) ? 150 : 0;
+        const score = titleBoost + wholeScore + compactWholeScore + tokenScores.reduce((total, item) => total + item, 0);
+        return { doc, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score || String(a.doc.title).localeCompare(String(b.doc.title), "zh-CN"))
+      .slice(0, 24);
+  }
+
+  function searchSnippet(doc, rawQuery) {
+    const query = normalizeSearchText(rawQuery);
+    const tokens = searchTokens(query);
+    const source = stripMarkdown(doc.body) || doc.summary || "";
+    const lower = normalizeSearchText(source);
+    const hit = [query, ...tokens].find((token) => token && lower.includes(token));
+    if (!hit) return doc.summary || source.slice(0, 150);
+    const index = lower.indexOf(hit);
+    const start = Math.max(0, index - 58);
+    const end = Math.min(source.length, index + hit.length + 110);
+    return `${start > 0 ? "..." : ""}${source.slice(start, end)}${end < source.length ? "..." : ""}`;
+  }
+
+  function renderSearchResults(rawQuery) {
+    const query = String(rawQuery || "").trim();
+    const results = searchDocs(query);
+    activeDocId = "";
+    renderedDoc = null;
+    if (outlineObserver) {
+      outlineObserver.disconnect();
+      outlineObserver = null;
+    }
+    renderOutline(null, { message: "搜索结果不生成标题目录。" });
+    els.documentPanel.innerHTML = `
+      <section class="search-results-panel">
+        <div class="search-results-head">
+          <span>Search</span>
+          <h1>搜索文档</h1>
+          <p>${results.length ? `找到 ${results.length} 篇匹配 “${escapeHtml(query)}” 的文档。` : `没有找到匹配 “${escapeHtml(query)}” 的文档。`}</p>
+        </div>
+        ${results.length ? `
+          <div class="search-result-list">
+            ${results.map(({ doc }) => `
+              <button class="search-result-card" type="button" data-doc-id="${escapeHtml(doc.id)}">
+                <span class="search-result-meta">
+                  <span>${escapeHtml(doc.category || "文档")}</span>
+                  <span>${escapeHtml(doc.updated || "")}</span>
+                  <span>${escapeHtml(doc.project_path || "")}</span>
+                </span>
+                <strong>${escapeHtml(doc.title)}</strong>
+                <em>${escapeHtml(doc.summary || "")}</em>
+                <p>${escapeHtml(searchSnippet(doc, query))}</p>
+              </button>
+            `).join("")}
+          </div>
+        ` : `
+          <div class="empty-state">换一个关键词试试，可以搜索标题、目录、标签、摘要和正文内容。</div>
+        `}
+      </section>
+    `;
+    els.documentPanel.querySelectorAll("[data-doc-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openSearchResult(button.dataset.docId || "");
+      });
+    });
+    renderDirectoryTree();
+  }
+
+  function clearSearchInput() {
+    activeQuery = "";
+    if (els.searchInput) els.searchInput.value = "";
+  }
+
+  function openSearchResult(docId) {
+    clearSearchInput();
+    showDoc(docId || "", { allowQueryOverride: false });
   }
 
   function canEditProject() {
@@ -1591,6 +1820,21 @@
   els.searchInput.addEventListener("input", () => {
     activeQuery = els.searchInput.value;
     if (project && accessState.allowed) renderProject();
+  });
+  els.searchInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || !project || !accessState.allowed || !activeQuery.trim()) return;
+    const hit = searchDocs(activeQuery)[0]?.doc;
+    if (!hit) return;
+    event.preventDefault();
+    openSearchResult(hit.id);
+  });
+  document.addEventListener("keydown", (event) => {
+    const key = String(event.key || "").toLowerCase();
+    if (key !== "k" || !(event.metaKey || event.ctrlKey)) return;
+    if (!els.searchInput || els.searchInput.disabled) return;
+    event.preventDefault();
+    els.searchInput.focus();
+    els.searchInput.select();
   });
   els.themeToggle?.addEventListener("click", toggleTheme);
   els.railToggle?.addEventListener("click", toggleRail);
