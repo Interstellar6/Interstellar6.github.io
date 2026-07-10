@@ -14,6 +14,7 @@
   const ADMIN_REALM = "__admin__";
   const THEME_KEY = "relumeow-theme-v1";
   const DIRECTORY_KEY = "relumeow-directory-expanded-v1";
+  const DIRECTORY_MODE_KEY = "relumeow-directory-mode-v1";
   const DISCUSSION_KEY = "relumeow-discussion-v1";
   const LAYOUT_KEY = "relumeow-layout-v1";
 
@@ -25,6 +26,7 @@
   let expandedDirs = new Set([""]);
   let activeSelection = null;
   let expandedDirsLoadedFor = "";
+  let directoryMode = "content";
   let activeDiscussion = { comments: [], annotations: [] };
   let editMode = false;
   let renderedDoc = null;
@@ -51,6 +53,8 @@
     themeLabel: $("themeLabel"),
     railToggle: $("railToggle"),
     railResizer: $("railResizer"),
+    directoryContentMode: $("directoryContentMode"),
+    directoryDateMode: $("directoryDateMode"),
     tocToggle: $("tocToggle"),
     tocEdgeToggle: $("tocEdgeToggle"),
     tocResizer: $("tocResizer"),
@@ -195,6 +199,10 @@
 
   function storageScope() {
     return project?.slug || "home";
+  }
+
+  function directoryStorageScope() {
+    return `${storageScope()}::${directoryMode}`;
   }
 
   function discussionKey(docId = activeDocId) {
@@ -416,16 +424,22 @@
     setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   }
 
+  function initDirectoryMode() {
+    const saved = loadJson(DIRECTORY_MODE_KEY, {});
+    directoryMode = saved[storageScope()] === "date" ? "date" : "content";
+    syncDirectoryModeControls();
+  }
+
   function loadExpandedDirs() {
     const all = loadJson(DIRECTORY_KEY, {});
-    const saved = all[storageScope()];
+    const saved = all[directoryStorageScope()] || (directoryMode === "content" ? all[storageScope()] : null);
     expandedDirs = new Set(Array.isArray(saved) ? saved : [""]);
     expandedDirs.add("");
   }
 
   function saveExpandedDirs() {
     const all = loadJson(DIRECTORY_KEY, {});
-    all[storageScope()] = Array.from(expandedDirs);
+    all[directoryStorageScope()] = Array.from(expandedDirs);
     saveJson(DIRECTORY_KEY, all);
   }
 
@@ -568,6 +582,7 @@
 
   function renderDirectoryTree() {
     ensureExpandedScope();
+    syncDirectoryModeControls();
     if (!project || !tree.length) {
       els.directoryTree.innerHTML = `
         <a class="home-rail-link" href="/home/">
@@ -583,7 +598,7 @@
         <span>⌂</span>
         <strong>Home</strong>
       </a>
-      ${tree.map((node) => renderTreeNode(node, 0)).join("")}
+      ${renderDirectoryNodes().map((node) => renderTreeNode(node, 0)).join("")}
     `;
     els.directoryTree.querySelectorAll("[data-doc-id], [data-dir-path]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -599,6 +614,76 @@
         } else renderDirectoryTree();
       });
     });
+  }
+
+  function renderDirectoryNodes() {
+    return directoryMode === "date" ? buildDateTree() : tree;
+  }
+
+  function buildDateTree() {
+    const byDate = new Map();
+    docs.forEach((doc) => {
+      const date = normalizeDocDate(doc.updated);
+      if (!date) return;
+      if (!byDate.has(date)) byDate.set(date, []);
+      byDate.get(date).push(doc);
+    });
+    const nodes = Array.from(byDate.entries())
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([date, items]) => ({
+        type: "dir",
+        title: formatDirectoryDate(date, items.length),
+        path: `date/${date}`,
+        children: items
+          .slice()
+          .sort((left, right) => {
+            const updated = String(right.updated || "").localeCompare(String(left.updated || ""));
+            if (updated) return updated;
+            return String(left.title || "").localeCompare(String(right.title || ""), "zh-Hans-CN");
+          })
+          .map((doc) => ({
+            type: "doc",
+            id: doc.id,
+            title: doc.title,
+          })),
+      }));
+    if (!nodes.length) return [];
+    if (expandedDirs.size <= 1) expandedDirs.add(nodes[0].path);
+    const activeDoc = docs.find((doc) => doc.id === activeDocId);
+    const activeDatePath = activeDoc ? `date/${normalizeDocDate(activeDoc.updated)}` : "";
+    if (activeDatePath) expandedDirs.add(activeDatePath);
+    return nodes;
+  }
+
+  function normalizeDocDate(value) {
+    const raw = String(value || "").trim();
+    const match = raw.match(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/);
+    if (!match) return "";
+    const [year, month, day] = match[0].split(/[-/.]/).map((part) => part.padStart(2, "0"));
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatDirectoryDate(date, count) {
+    return `${date} · ${count} 篇`;
+  }
+
+  function syncDirectoryModeControls() {
+    els.directoryContentMode?.setAttribute("aria-pressed", directoryMode === "content" ? "true" : "false");
+    els.directoryDateMode?.setAttribute("aria-pressed", directoryMode === "date" ? "true" : "false");
+  }
+
+  function setDirectoryMode(mode) {
+    const next = mode === "date" ? "date" : "content";
+    if (next === directoryMode) return;
+    saveExpandedDirs();
+    directoryMode = next;
+    expandedDirsLoadedFor = "";
+    ensureExpandedScope();
+    if (directoryMode === "date") buildDateTree();
+    const saved = loadJson(DIRECTORY_MODE_KEY, {});
+    saved[storageScope()] = directoryMode;
+    saveJson(DIRECTORY_MODE_KEY, saved);
+    renderDirectoryTree();
   }
 
   function renderTreeNode(node, depth) {
@@ -619,13 +704,20 @@
   }
 
   function ensureExpandedScope() {
-    const scope = storageScope();
+    const scope = directoryStorageScope();
     if (expandedDirsLoadedFor === scope) return;
     loadExpandedDirs();
     expandedDirsLoadedFor = scope;
   }
 
   function expandDocAncestors(doc) {
+    if (directoryMode === "date") {
+      const date = normalizeDocDate(doc?.updated);
+      expandedDirs.add("");
+      if (date) expandedDirs.add(`date/${date}`);
+      saveExpandedDirs();
+      return;
+    }
     const directory = String(doc?.directory || "");
     expandedDirs.add("");
     if (!directory) return;
@@ -1837,6 +1929,8 @@
     els.searchInput.select();
   });
   els.themeToggle?.addEventListener("click", toggleTheme);
+  els.directoryContentMode?.addEventListener("click", () => setDirectoryMode("content"));
+  els.directoryDateMode?.addEventListener("click", () => setDirectoryMode("date"));
   els.railToggle?.addEventListener("click", toggleRail);
   els.tocToggle?.addEventListener("click", toggleToc);
   els.tocEdgeToggle?.addEventListener("click", toggleToc);
@@ -1855,6 +1949,7 @@
   });
 
   initTheme();
+  initDirectoryMode();
   initLayoutControls();
   initRailResize();
   initTocResize();
