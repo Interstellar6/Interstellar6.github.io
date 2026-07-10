@@ -7,6 +7,7 @@ const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v4";
 const ALIGNMENT_NUDGE_STEP = 0.35;
 const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
+const ALIGNMENT_ROTATION_LIMIT_DEG = { x: 45, y: 90, z: 45 };
 const CAMERA_CONTROL_VERSION = "supersplat-smooth-20260711";
 const CAMERA_ORBIT_SENSITIVITY = 0.0054;
 const CAMERA_TRACKPAD_ORBIT_SENSITIVITY = 0.0044;
@@ -517,9 +518,9 @@ function sanitizeAlignmentVector(value) {
 function sanitizeAlignmentEuler(value) {
   const source = value && typeof value === "object" ? value : {};
   return {
-    x: clampFinite(source.x, -12, 12, 0),
-    y: clampFinite(source.y, -24, 24, 0),
-    z: clampFinite(source.z, -12, 12, 0),
+    x: clampFinite(source.x, -ALIGNMENT_ROTATION_LIMIT_DEG.x, ALIGNMENT_ROTATION_LIMIT_DEG.x, 0),
+    y: clampFinite(source.y, -ALIGNMENT_ROTATION_LIMIT_DEG.y, ALIGNMENT_ROTATION_LIMIT_DEG.y, 0),
+    z: clampFinite(source.z, -ALIGNMENT_ROTATION_LIMIT_DEG.z, ALIGNMENT_ROTATION_LIMIT_DEG.z, 0),
   };
 }
 
@@ -1974,7 +1975,7 @@ function updateAlignmentButtons() {
   const defaultOffset = state.defaultViewerOffset;
   const label = document.querySelector("#alignmentReadout");
   if (label) {
-    label.textContent = `default ${defaultOffset.x.toFixed(2)} ${defaultOffset.y.toFixed(2)} ${defaultOffset.z.toFixed(2)} · manual ${offset.x.toFixed(2)} ${offset.y.toFixed(2)} ${offset.z.toFixed(2)} · yaw ${rotation.y.toFixed(1)}°`;
+    label.textContent = `default ${defaultOffset.x.toFixed(2)} ${defaultOffset.y.toFixed(2)} ${defaultOffset.z.toFixed(2)} · manual ${offset.x.toFixed(2)} ${offset.y.toFixed(2)} ${offset.z.toFixed(2)} · rot ${rotation.x.toFixed(1)}°/${rotation.y.toFixed(1)}°/${rotation.z.toFixed(1)}°`;
   }
   const reset = document.querySelector("#resetAlignment");
   if (reset) reset.classList.toggle("is-active", manualAlignmentIsActive());
