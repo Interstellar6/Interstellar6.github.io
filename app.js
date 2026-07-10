@@ -17,6 +17,7 @@
   const DIRECTORY_MODE_KEY = "relumeow-directory-mode-v1";
   const DISCUSSION_KEY = "relumeow-discussion-v1";
   const LAYOUT_KEY = "relumeow-layout-v1";
+  const PREVIEW_MODE = new URLSearchParams(window.location.search).get("preview") === "1";
 
   let activeDocId = "";
   let activeQuery = "";
@@ -61,6 +62,7 @@
     tocResizer: $("tocResizer"),
     outlineTree: $("outlineTree"),
   };
+  if (PREVIEW_MODE) document.body.classList.add("preview-mode");
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -1588,34 +1590,43 @@
   }
 
   function bindDocLinkPreviews() {
+    if (PREVIEW_MODE) return;
     const body = els.documentPanel.querySelector(".doc-body");
     if (!body) return;
     let preview = null;
     let hideTimer = null;
+    let activeAnchor = null;
     const removePreview = () => {
       window.clearTimeout(hideTimer);
       preview?.remove();
       preview = null;
+      activeAnchor = null;
     };
     const scheduleHide = () => {
       window.clearTimeout(hideTimer);
       hideTimer = window.setTimeout(removePreview, 120);
     };
     const showPreview = (anchor) => {
-      const doc = docs.find((item) => item.id === anchor.dataset.docPreview);
-      if (!doc) return;
+      const doc = anchor.dataset.docPreview ? docs.find((item) => item.id === anchor.dataset.docPreview) : null;
+      const previewUrl = anchor.dataset.previewUrl || previewUrlForHref(anchor.getAttribute("href") || "");
+      if (!doc && !previewUrl) return;
       window.clearTimeout(hideTimer);
+      if (preview && activeAnchor === anchor) {
+        positionLinkPreview(anchor, preview);
+        return;
+      }
+      activeAnchor = anchor;
       preview?.remove();
       preview = document.createElement("aside");
       preview.className = "link-preview-card";
-      preview.innerHTML = renderLinkPreview(doc);
+      preview.innerHTML = renderLinkPreview(doc, previewUrl, anchor.textContent || anchor.getAttribute("href") || "");
       document.body.appendChild(preview);
       preview.addEventListener("mouseenter", () => window.clearTimeout(hideTimer));
       preview.addEventListener("mouseleave", scheduleHide);
       positionLinkPreview(anchor, preview);
       hydrateProtectedImages(preview);
     };
-    const previewAnchor = (target) => target?.closest?.("a[data-doc-preview]");
+    const previewAnchor = (target) => target?.closest?.("a[data-doc-preview], a[data-site-preview]");
     const showFromEvent = (event) => {
       const anchor = previewAnchor(event.target);
       if (anchor && body.contains(anchor)) showPreview(anchor);
@@ -1644,16 +1655,56 @@
     });
   }
 
-  function renderLinkPreview(doc) {
-    const image = firstMarkdownImage(doc);
+  function renderLinkPreview(doc, previewUrl, fallbackTitle = "") {
+    const title = doc?.title || fallbackTitle || "站内页面";
+    const summary = doc?.summary || stripMarkdown(doc?.body || "").slice(0, 140) || "打开站内页面查看完整内容。";
+    const meta = doc?.updated || doc?.category || "站内链接";
+    const cleanUrl = previewUrl ? previewUrl.replace(/([?&])preview=1(&?)/, (_m, prefix, suffix) => suffix ? prefix : "").replace(/\?$/, "") : "";
     return `
-      ${image ? `<img class="link-preview-image" src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt || doc.title)}">` : `<div class="link-preview-fallback">${escapeHtml(project?.mark || "DOC")}</div>`}
+      ${previewUrl ? `
+        <div class="link-preview-browser" aria-hidden="true">
+          <div class="link-preview-chrome">
+            <span class="link-preview-dots"><i></i><i></i><i></i></span>
+            <span class="link-preview-url">${escapeHtml(cleanUrl || previewUrl)}</span>
+          </div>
+          <div class="link-preview-viewport">
+            <iframe class="link-preview-frame" src="${escapeHtml(previewUrl)}" title="${escapeHtml(title)} preview" tabindex="-1" loading="lazy"></iframe>
+          </div>
+        </div>
+      ` : `<div class="link-preview-fallback">${escapeHtml(project?.mark || "DOC")}</div>`}
       <div class="link-preview-body">
-        <span>${escapeHtml(doc.updated || doc.category || "站内文档")}</span>
-        <strong>${escapeHtml(doc.title || "Untitled")}</strong>
-        <p>${escapeHtml(doc.summary || stripMarkdown(doc.body || "").slice(0, 120))}</p>
+        <span>${escapeHtml(meta)}</span>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(summary)}</p>
       </div>
     `;
+  }
+
+  function previewUrlForHref(href) {
+    const raw = String(href || "").trim();
+    if (!raw || raw.startsWith("#") || /^(mailto:|tel:|data:|\/api\/)/i.test(raw)) return "";
+    try {
+      const url = new URL(raw, window.location.href);
+      if (!isPreviewableSiteUrl(url)) return "";
+      url.searchParams.set("preview", "1");
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function isPreviewableSiteUrl(url) {
+    if (url.origin !== window.location.origin) return false;
+    const pathname = url.pathname || "/";
+    if (pathname.startsWith("/api/") || pathname.includes("/assets/") || pathname.includes("/static/")) return false;
+    const lastSegment = pathname.split("/").filter(Boolean).pop() || "";
+    if (/\.[a-z0-9]{2,6}$/i.test(lastSegment) && !lastSegment.endsWith(".html")) return false;
+    const normalizedPath = pathname.replace(/\/+$/, "/");
+    const routes = new Set(["/home/", "/login/", "/admin/", ...projects.map((item) => item.route).filter(Boolean)]);
+    return Array.from(routes).some((route) => {
+      const normalizedRoute = String(route || "/").replace(/\/+$/, "/");
+      return normalizedPath === normalizedRoute || normalizedPath.startsWith(normalizedRoute);
+    });
   }
 
   function positionLinkPreview(anchor, preview) {
@@ -1880,9 +1931,14 @@
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, href) => {
         const resolved = resolveMarkdownHref(href);
         const target = resolved.external ? "_blank" : "_self";
-        const previewAttr = resolved.docId ? ` data-doc-preview="${escapeHtml(resolved.docId)}"` : "";
-        const previewClass = resolved.docId ? ` class="doc-preview-link"` : "";
-        return `<a href="${escapeHtml(resolved.href)}" target="${target}" rel="noreferrer"${previewClass}${previewAttr}>${label}</a>`;
+        const previewUrl = previewUrlForHref(resolved.href);
+        const previewAttrs = [
+          (resolved.docId || previewUrl) ? `class="doc-preview-link"` : "",
+          resolved.docId ? `data-doc-preview="${escapeHtml(resolved.docId)}"` : "",
+          previewUrl ? `data-site-preview="true"` : "",
+          previewUrl ? `data-preview-url="${escapeHtml(previewUrl)}"` : "",
+        ].filter(Boolean).join(" ");
+        return `<a href="${escapeHtml(resolved.href)}" target="${target}" rel="noreferrer"${previewAttrs ? ` ${previewAttrs}` : ""}>${label}</a>`;
       })
       .replace(/\$\$([^$]+)\$\$/g, (_m, tex) => renderFormula(tex, true))
       .replace(/\$([^$\n]+)\$/g, (_m, tex) => renderFormula(tex, false))
