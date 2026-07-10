@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -170,6 +171,14 @@ def shell_project(project: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def source_repo_for_project(project: dict[str, Any]) -> Path:
+    env_key = "RELUMEOW_SOURCE_REPO_" + re.sub(r"[^A-Z0-9]+", "_", str(project["slug"]).upper()).strip("_")
+    override = os.environ.get(env_key)
+    if override:
+        return Path(override).expanduser().resolve()
+    return (ROOT / project["source"]["repo"]).resolve()
+
+
 def should_collect(relative: Path, overview_name: str, docs_root: Path) -> bool:
     name = relative.name
     root_readme = docs_root / "README.md"
@@ -263,6 +272,51 @@ def copy_local_assets(
     return re.sub(r"!\[\[([^\]]+)\]\]", replace_obsidian, body)
 
 
+def git_last_modified_dates(repo: Path, docs_root: Path) -> dict[str, str]:
+    try:
+        docs_root_relative = docs_root.relative_to(repo).as_posix()
+    except ValueError:
+        return {}
+    if not (repo / ".git").exists():
+        return {}
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "log",
+                "--name-only",
+                "--format=commit:%ad",
+                "--date=short",
+                "--",
+                docs_root_relative,
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    except OSError:
+        return {}
+    if proc.returncode != 0:
+        return {}
+
+    dates: dict[str, str] = {}
+    current_date = ""
+    prefix = f"{docs_root_relative.rstrip('/')}/"
+    for raw_line in proc.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("commit:"):
+            current_date = line.split(":", 1)[1].strip()
+            continue
+        if current_date and line.startswith(prefix):
+            relative = line[len(prefix):]
+            dates.setdefault(relative, current_date)
+    return dates
+
+
 def load_doc(
     project: dict[str, Any],
     path: Path,
@@ -270,6 +324,7 @@ def load_doc(
     used_ids: set[str],
     route_dir: Path,
     protected_asset_prefix: str,
+    updated_dates: dict[str, str],
 ) -> Doc:
     raw = path.read_text(encoding="utf-8")
     meta, body = split_front_matter(raw)
@@ -308,6 +363,7 @@ def load_doc(
             body = copy_local_assets(project, path, doc_id, body, route_dir / "assets", "assets")
     words = re.findall(r"[\w\u4e00-\u9fff]+", strip_markdown(body))
     directory = "" if relative.parent == Path(".") else str(relative.parent).replace("\\", "/")
+    updated = updated_dates.get(project_path) or datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d")
     return Doc(
         id=doc_id,
         title=title,
@@ -321,7 +377,7 @@ def load_doc(
         project_path=project_path,
         directory=directory,
         is_overview=is_overview,
-        updated=datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d"),
+        updated=updated,
         tags=normalize_tags(meta, category),
         body=body,
         headings=extract_headings(body),
@@ -330,10 +386,11 @@ def load_doc(
 
 
 def collect_docs(project: dict[str, Any], route_dir: Path, protected_asset_prefix: str) -> list[Doc]:
-    repo = (ROOT / project["source"]["repo"]).resolve()
+    repo = source_repo_for_project(project)
     docs_root = (repo / project["source"]["docs_root"]).resolve()
     if not docs_root.exists():
         raise FileNotFoundError(f"docs_root not found for {project['slug']}: {docs_root}")
+    updated_dates = git_last_modified_dates(repo, docs_root)
     used_ids: set[str] = set()
     docs: list[Doc] = []
     seen: set[Path] = set()
@@ -342,14 +399,14 @@ def collect_docs(project: dict[str, Any], route_dir: Path, protected_asset_prefi
         path = docs_root / item
         rel = path.relative_to(docs_root) if path.exists() else Path(item)
         if path.exists() and path.is_file() and should_collect(rel, overview_name, docs_root):
-            docs.append(load_doc(project, path, docs_root, used_ids, route_dir, protected_asset_prefix))
+            docs.append(load_doc(project, path, docs_root, used_ids, route_dir, protected_asset_prefix, updated_dates))
             seen.add(path.resolve())
     for path in sorted(docs_root.rglob("*.md")):
         if path.resolve() in seen:
             continue
         rel = path.relative_to(docs_root)
         if should_collect(rel, overview_name, docs_root):
-            docs.append(load_doc(project, path, docs_root, used_ids, route_dir, protected_asset_prefix))
+            docs.append(load_doc(project, path, docs_root, used_ids, route_dir, protected_asset_prefix, updated_dates))
     return docs
 
 
