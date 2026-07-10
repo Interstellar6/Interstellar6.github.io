@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent
 PROJECTS_FILE = ROOT / "projects.yaml"
 BUILD_DIR = ROOT / "_site"
 ASSETS_DIR = ROOT / "assets"
+STATIC_DIR = ROOT / "static"
 PROTECTED_DIR = BUILD_DIR / "_protected"
 ASSET_VERSION = datetime.now().strftime("%Y%m%d%H%M%S")
 
@@ -602,6 +603,11 @@ def build_static_routes(site_config: dict[str, Any], summaries: list[dict[str, A
     )
 
 
+def copy_static_tree() -> None:
+    if STATIC_DIR.exists():
+        copytree_merge(STATIC_DIR, BUILD_DIR)
+
+
 def main() -> int:
     config = yaml.safe_load(PROJECTS_FILE.read_text(encoding="utf-8"))
     site_config = config.get("site", {})
@@ -623,6 +629,7 @@ def main() -> int:
     write_project_route_summaries(project_payloads, summaries)
     build_home(site_config, summaries)
     build_static_routes(site_config, summaries)
+    copy_static_tree()
     print(f"Built relumeow.top site at {BUILD_DIR}")
     return 0
 

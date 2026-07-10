@@ -1,0 +1,134 @@
+{
+  "version": "local-bedroom4-anysplat-semanticmesh-20260711",
+  "chunkSize": 20971520,
+  "assets": {
+    "visual": {
+      "id": "bedroom_4_anysplat_20260709_044525_gaussians_ply",
+      "label": "Bedroom 4 AnySplat Gaussian PLY",
+      "fileName": "bedroom_4_anysplat_gaussians.ply",
+      "fileType": "ply",
+      "format": "graphdeco-gaussian-ply",
+      "vertexCount": 1313391,
+      "bbox": {
+        "min": [
+          -0.7425746917724609,
+          -0.7499085068702698,
+          0.17000623047351837
+        ],
+        "max": [
+          0.7661001086235046,
+          0.3993513882160187,
+          2.0340237617492676
+        ]
+      },
+      "sourcePath": "/Users/zhangyuxiang/Desktop/worksplace/AnySplat/tmp_anysplat_results/bedroom_4_anysplat_20260709_044525/gaussians.ply",
+      "size": 89311005,
+      "sha256": "8f87267bcea61714ba5ec60dc63a8453f73c93e82052c97e837e9823579f87ba",
+      "parts": [
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part00",
+          "size": 20971520,
+          "sha256": "6777084999cd5d96facffb23d502834a9633f01d13f2aab0ac88423dc551e9ff"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part01",
+          "size": 20971520,
+          "sha256": "ed3b3f3fff0a2b776f6d790affc0de1d412d94884f71fc7122a3e43c63a8d9d2"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part02",
+          "size": 20971520,
+          "sha256": "fd4aca6abac3e25e19434bb94cb48efe0b66ee14bf5b5873ed5380ec92a5b8a9"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part03",
+          "size": 20971520,
+          "sha256": "47075f314fe69d878f5c46fa3f40d55ad5d7574d07ed0d0df8f5553671330c5e"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part04",
+          "size": 5424925,
+          "sha256": "eabe691f12e5c0598e85cef50b52fefb8794c9d714c5ab8b8535810423635a56"
+        }
+      ]
+    },
+    "collider": {
+      "id": "bedroom_4_semantic_mesh_local_debug_ply",
+      "label": "Bedroom 4 semantic mesh collider PLY",
+      "fileName": "bedroom_4_mesh_semantic_local_debug.ply",
+      "fileType": "ply",
+      "format": "semantic-ascii-mesh-ply",
+      "vertexCount": 426657,
+      "faceCount": 142219,
+      "bbox": {
+        "min": [
+          -15.84257984,
+          -13.53475285,
+          -2.16395473
+        ],
+        "max": [
+          19.62191391,
+          9.3969965,
+          34.1869812
+        ]
+      },
+      "topObjectIds": [
+        [
+          1,
+          185508
+        ],
+        [
+          0,
+          89142
+        ],
+        [
+          20,
+          77598
+        ],
+        [
+          5,
+          24468
+        ],
+        [
+          4,
+          15582
+        ],
+        [
+          12,
+          8751
+        ],
+        [
+          14,
+          6399
+        ],
+        [
+          3,
+          5184
+        ],
+        [
+          2,
+          4338
+        ],
+        [
+          9,
+          3414
+        ]
+      ],
+      "sourcePath": "/Users/zhangyuxiang/Desktop/worksplace/Video2Mesh/tmp_remote_results/bedroom_4_full_pipeline_valid_1280_20260708_160328/simulator_assets/mesh_semantics_local/mesh_semantic_local_debug.ply",
+      "size": 30674825,
+      "sha256": "85a5efefd6f7c78c70da8c556de0cf27bbb3102373aa0a8f5ed96db5b477e5e4",
+      "parts": [
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.part00",
+          "size": 20971520,
+          "sha256": "c6ef064b54719ce45f3c9a157ac9a24fe68ce945e0a0f9d757e15cc5c5d11aa1"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.part01",
+          "size": 9703305,
+          "sha256": "ab91c218d285e0352133d8ade3ea63812c14974f748b5cd0bf343cd5bead72cb"
+        }
+      ]
+    }
+  }
+}
