@@ -1659,7 +1659,7 @@
     const title = doc?.title || fallbackTitle || "站内页面";
     const summary = doc?.summary || stripMarkdown(doc?.body || "").slice(0, 140) || "打开站内页面查看完整内容。";
     const meta = doc?.updated || doc?.category || "站内链接";
-    const cleanUrl = previewUrl ? previewUrl.replace(/([?&])preview=1(&?)/, (_m, prefix, suffix) => suffix ? prefix : "").replace(/\?$/, "") : "";
+    const cleanUrl = previewUrl ? readablePreviewUrl(previewUrl) : "";
     return `
       ${previewUrl ? `
         <div class="link-preview-browser" aria-hidden="true">
@@ -1690,6 +1690,16 @@
       return `${url.pathname}${url.search}${url.hash}`;
     } catch (_error) {
       return "";
+    }
+  }
+
+  function readablePreviewUrl(previewUrl) {
+    try {
+      const url = new URL(previewUrl, window.location.origin);
+      url.searchParams.delete("preview");
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch (_error) {
+      return String(previewUrl || "").replace(/([?&])preview=1(&?)/, (_m, prefix, suffix) => suffix ? prefix : "").replace(/\?$/, "");
     }
   }
 

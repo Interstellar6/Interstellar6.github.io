@@ -53,6 +53,11 @@ body {
   color: var(--ink);
 }
 
+body.preview-mode {
+  min-height: 720px;
+  overflow: hidden;
+}
+
 html[data-theme="light"] body {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 246, 251, 0.74)),
@@ -71,15 +76,19 @@ body[data-view="admin"] .workspace-shell {
 body[data-view="home"] .project-rail,
 body[data-view="login"] .project-rail,
 body[data-view="admin"] .project-rail,
+body.preview-mode .project-rail,
 body[data-view="home"] .outline-rail,
 body[data-view="login"] .outline-rail,
 body[data-view="admin"] .outline-rail,
+body.preview-mode .outline-rail,
 body[data-view="home"] .rail-resizer,
 body[data-view="login"] .rail-resizer,
 body[data-view="admin"] .rail-resizer,
+body.preview-mode .rail-resizer,
 body[data-view="home"] .toc-resizer,
 body[data-view="login"] .toc-resizer,
 body[data-view="admin"] .toc-resizer,
+body.preview-mode .toc-resizer,
 body[data-view="home"] .rail-toggle,
 body[data-view="login"] .rail-toggle,
 body[data-view="admin"] .rail-toggle {
@@ -101,8 +110,14 @@ body[data-view="admin"] .rail-toggle {
 
 body[data-view="home"] .content-shell,
 body[data-view="login"] .content-shell,
-body[data-view="admin"] .content-shell {
+body[data-view="admin"] .content-shell,
+body.preview-mode .content-shell {
   grid-column: 1;
+}
+
+body.preview-mode .workspace-shell {
+  min-height: 720px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 body.rail-collapsed .workspace-shell {
@@ -518,6 +533,44 @@ body[data-view="admin"] .toc-edge-toggle {
   align-items: flex-start;
   margin-bottom: 26px;
 }
+
+body.preview-mode .content-topbar {
+  min-height: 88px;
+  margin-bottom: 10px;
+}
+
+body.preview-mode .topbar-actions,
+body.preview-mode .doc-tools,
+body.preview-mode .doc-discussion,
+body.preview-mode .annotation-popover {
+  display: none;
+}
+
+body.preview-mode .content-shell {
+  padding: 18px 28px 48px;
+}
+
+body.preview-mode .document-panel {
+  padding: 18px 26px 52px;
+}
+
+body.preview-mode .doc-meta {
+  margin-bottom: 10px;
+}
+
+body.preview-mode .doc-body {
+  max-height: 560px;
+  overflow: hidden;
+}
+
+body.preview-mode .doc-body h1 {
+  font-size: 42px;
+}
+
+body.preview-mode .doc-body h2 {
+  margin-top: 28px;
+}
+
 .route-label { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
 .content-topbar h1 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: 0; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
