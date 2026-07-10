@@ -1021,6 +1021,7 @@
     if (!isEditing) bindTaskCheckboxes(doc, effectiveBody);
     bindDiscussionPanel(doc);
     if (!isEditing) bindSelectionAnnotations(doc);
+    if (!isEditing) bindDocLinkPreviews();
     renderOutline(doc, { editing: isEditing });
     loadRemoteDiscussions(doc.id).then((entry) => {
       if (activeDocId !== doc.id) return;
@@ -1586,6 +1587,90 @@
     });
   }
 
+  function bindDocLinkPreviews() {
+    const body = els.documentPanel.querySelector(".doc-body");
+    if (!body) return;
+    let preview = null;
+    let hideTimer = null;
+    const removePreview = () => {
+      window.clearTimeout(hideTimer);
+      preview?.remove();
+      preview = null;
+    };
+    const scheduleHide = () => {
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(removePreview, 120);
+    };
+    const showPreview = (anchor) => {
+      const doc = docs.find((item) => item.id === anchor.dataset.docPreview);
+      if (!doc) return;
+      window.clearTimeout(hideTimer);
+      preview?.remove();
+      preview = document.createElement("aside");
+      preview.className = "link-preview-card";
+      preview.innerHTML = renderLinkPreview(doc);
+      document.body.appendChild(preview);
+      preview.addEventListener("mouseenter", () => window.clearTimeout(hideTimer));
+      preview.addEventListener("mouseleave", scheduleHide);
+      positionLinkPreview(anchor, preview);
+      hydrateProtectedImages(preview);
+    };
+    const previewAnchor = (target) => target?.closest?.("a[data-doc-preview]");
+    const showFromEvent = (event) => {
+      const anchor = previewAnchor(event.target);
+      if (anchor && body.contains(anchor)) showPreview(anchor);
+    };
+    body.addEventListener("mouseover", showFromEvent);
+    body.addEventListener("mousemove", showFromEvent);
+    body.addEventListener("pointerover", showFromEvent);
+    body.addEventListener("focusin", (event) => {
+      const anchor = previewAnchor(event.target);
+      if (anchor && body.contains(anchor)) showPreview(anchor);
+    });
+    const hideFromEvent = (event) => {
+      const anchor = previewAnchor(event.target);
+      if (!anchor) return;
+      const next = event.relatedTarget;
+      if (next && (anchor.contains(next) || preview?.contains(next))) return;
+      scheduleHide();
+    };
+    body.addEventListener("mouseout", hideFromEvent);
+    body.addEventListener("pointerout", hideFromEvent);
+    body.addEventListener("focusout", scheduleHide);
+    window.addEventListener("scroll", removePreview, { passive: true });
+    window.addEventListener("resize", removePreview, { passive: true });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") removePreview();
+    });
+  }
+
+  function renderLinkPreview(doc) {
+    const image = firstMarkdownImage(doc);
+    return `
+      ${image ? `<img class="link-preview-image" src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt || doc.title)}">` : `<div class="link-preview-fallback">${escapeHtml(project?.mark || "DOC")}</div>`}
+      <div class="link-preview-body">
+        <span>${escapeHtml(doc.updated || doc.category || "站内文档")}</span>
+        <strong>${escapeHtml(doc.title || "Untitled")}</strong>
+        <p>${escapeHtml(doc.summary || stripMarkdown(doc.body || "").slice(0, 120))}</p>
+      </div>
+    `;
+  }
+
+  function positionLinkPreview(anchor, preview) {
+    const anchorRect = anchor.getBoundingClientRect();
+    const previewRect = preview.getBoundingClientRect();
+    const gap = 12;
+    const maxLeft = Math.max(16, window.innerWidth - previewRect.width - 16);
+    const left = Math.min(maxLeft, Math.max(16, anchorRect.left));
+    const belowTop = anchorRect.bottom + gap;
+    const aboveTop = anchorRect.top - previewRect.height - gap;
+    const top = belowTop + previewRect.height <= window.innerHeight - 16
+      ? belowTop
+      : Math.max(16, aboveTop);
+    preview.style.left = `${Math.round(left)}px`;
+    preview.style.top = `${Math.round(top)}px`;
+  }
+
   async function hydrateProtectedImages(container) {
     if (!project || project.access?.mode !== "passcode") return;
     const realm = project.access?.realm || project.slug;
@@ -1795,7 +1880,9 @@
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, href) => {
         const resolved = resolveMarkdownHref(href);
         const target = resolved.external ? "_blank" : "_self";
-        return `<a href="${escapeHtml(resolved.href)}" target="${target}" rel="noreferrer">${label}</a>`;
+        const previewAttr = resolved.docId ? ` data-doc-preview="${escapeHtml(resolved.docId)}"` : "";
+        const previewClass = resolved.docId ? ` class="doc-preview-link"` : "";
+        return `<a href="${escapeHtml(resolved.href)}" target="${target}" rel="noreferrer"${previewClass}${previewAttr}>${label}</a>`;
       })
       .replace(/\$\$([^$]+)\$\$/g, (_m, tex) => renderFormula(tex, true))
       .replace(/\$([^$\n]+)\$/g, (_m, tex) => renderFormula(tex, false))
@@ -1825,6 +1912,14 @@
 
   function resolveMarkdownHref(href) {
     const raw = String(href || "").trim();
+    const routeTarget = resolveRouteDocTarget(raw);
+    if (routeTarget) {
+      return {
+        href: `${project.route}#/doc/${encodeURIComponent(routeTarget.id)}`,
+        external: false,
+        docId: routeTarget.id,
+      };
+    }
     if (/^(https?:|mailto:|tel:|data:|\/api\/|#)/i.test(raw)) {
       return { href: raw, external: /^https?:/i.test(raw) };
     }
@@ -1847,7 +1942,22 @@
     return {
       href: `${project.route}#/doc/${encodeURIComponent(target.id)}`,
       external: false,
+      docId: target.id,
     };
+  }
+
+  function resolveRouteDocTarget(rawHref) {
+    if (!project) return null;
+    try {
+      const url = new URL(String(rawHref || ""), window.location.origin);
+      const normalizedRoute = String(project.route || "").replace(/\/+$/, "/");
+      const normalizedPath = url.pathname.replace(/\/+$/, "/");
+      if (normalizedPath !== normalizedRoute || !url.hash.startsWith("#/doc/")) return null;
+      const id = decodeURIComponent(url.hash.replace(/^#\/doc\//, ""));
+      return docs.find((doc) => doc.id === id) || null;
+    } catch (_error) {
+      return null;
+    }
   }
 
   function normalizeDocPath(path) {
@@ -1858,6 +1968,26 @@
       else parts.push(part);
     });
     return parts.join("/");
+  }
+
+  function firstMarkdownImage(doc) {
+    const match = String(doc?.body || "").match(/!\[([^\]]*)\]\(([^)]+)\)/);
+    if (!match) return null;
+    const { url } = splitImageTarget(match[2]);
+    const resolved = resolveAssetUrl(url, doc);
+    return { alt: match[1] || "", url: resolved };
+  }
+
+  function resolveAssetUrl(url, doc = renderedDoc) {
+    const raw = String(url || "").trim();
+    if (/^(https?:|data:|\/)/i.test(raw)) return raw;
+    const route = project?.route || "/";
+    if (/^(assets|static)\//i.test(raw)) return `${route}${raw}`;
+    const baseDir = doc?.directory || "";
+    const basePath = doc?.project_path || "";
+    const docDir = basePath.includes("/") ? basePath.split("/").slice(0, -1).join("/") : baseDir;
+    const normalized = normalizeDocPath(docDir ? `${docDir}/${raw}` : raw);
+    return normalized ? `${route}${normalized}` : raw;
   }
 
   function splitImageTarget(raw) {
