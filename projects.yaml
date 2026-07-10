@@ -45,9 +45,9 @@ projects:
       stages:
         - key: input-pose-pointcloud
           title: 输入、位姿与点云
-          summary: 视频抽帧、COLMAP/MVS、learned pose fallback、稠密点云和坐标尺度合同。
+          summary: 视频抽帧、COLMAP/MVS、VGGT/VGGT-Omega learned pose fallback、稠密点云和坐标尺度合同。
           image: assets/uploaded/video2mesh-research-catalog/pipeline-overview.svg
-          tags: [COLMAP, Point Cloud, Pose]
+          tags: [COLMAP, VGGT-Omega, Point Cloud, Pose]
         - key: visual-3dgs
           title: 视觉重建 / 3DGS
           summary: GraphDECO 3DGS、Spark、SuperSplat 和 visual proxy 的工程边界。
@@ -58,6 +58,11 @@ projects:
           summary: COLMAP Delaunay、Poisson、GS2Mesh、SuGaR、2DGS/GOF 的阶段定位。
           image: assets/uploaded/video2mesh-research-catalog/stage-mesh.svg
           tags: [Mesh, GS2Mesh, SuGaR]
+        - key: dynamic-4d-reconstruction
+          title: 动态 / 4D 重建
+          summary: D4RT、动态 depth/camera/tracks、动态点云和 per-object trajectory sidecar。
+          image: assets/uploaded/video2mesh-research-catalog/stage-dynamic-4d.svg
+          tags: [D4RT, 4D Reconstruction, Tracking]
         - key: semantic-scene-graph
           title: 语义与 Scene Graph
           summary: SAM/Grounded-SAM、semantic splats、mesh face sidecar 和交互查询。
