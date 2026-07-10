@@ -17,7 +17,7 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-controlfix2-20260711" />
+    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-gizmo-20260711" />
   </head>
   <body>
     <canvas id="sceneCanvas" tabindex="0" aria-label="AnySplat 3DGS visual layer with semantic mesh collider proxy"></canvas>
@@ -35,6 +35,15 @@
     </nav>
 
     <div class="mode-chip" id="modeChip">Loading real assets...</div>
+
+    <aside class="viewport-gizmo" aria-label="Viewport navigation controls">
+      <button class="gizmo-ball rotate" data-viewport-gizmo="rotate" type="button" title="Drag to rotate view">
+        <span>Rotate</span>
+      </button>
+      <button class="gizmo-ball pan" data-viewport-gizmo="pan" type="button" title="Drag to pan view">
+        <span>Pan</span>
+      </button>
+    </aside>
 
     <section class="hud" aria-label="Demo controls">
       <div class="panel status-card">
@@ -64,9 +73,25 @@
           <button id="toggleQuality" type="button">Balanced</button>
         </div>
         <div class="control-row">
-          <button id="interiorView" type="button">Interior View</button>
+          <button id="interiorView" type="button">Cycle Interior</button>
           <button id="respawnRobot" type="button">Respawn Robot</button>
           <button id="resetView" type="button">Reset View</button>
+        </div>
+        <div class="control-row camera-preset-row" aria-label="Camera preset controls">
+          <button data-camera-preset="front" type="button">Front</button>
+          <button data-camera-preset="back" type="button">Back</button>
+          <button data-camera-preset="left" type="button">Left</button>
+          <button data-camera-preset="right" type="button">Right</button>
+          <button data-camera-preset="top" type="button">Top</button>
+          <button data-camera-preset="robot" type="button">Robot Cam</button>
+        </div>
+        <div class="control-row camera-orbit-row" aria-label="Camera orbit controls">
+          <button data-camera-orbit="left" type="button">View ←</button>
+          <button data-camera-orbit="right" type="button">View →</button>
+          <button data-camera-orbit="up" type="button">View ↑</button>
+          <button data-camera-orbit="down" type="button">View ↓</button>
+          <button data-camera-orbit="in" type="button">Zoom In</button>
+          <button data-camera-orbit="out" type="button">Zoom Out</button>
         </div>
         <div class="control-row robot-step-row" aria-label="Robot step controls">
           <button data-robot-step="left" type="button">←</button>
@@ -100,6 +125,6 @@
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-controlfix2-20260711"></script>
+    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-gizmo-20260711"></script>
   </body>
 </html>

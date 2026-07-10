@@ -32,7 +32,20 @@ def content_hash_version(paths: list[Path]) -> str:
     return digest.hexdigest()[:12]
 
 
-ASSET_VERSION = content_hash_version([ROOT / "styles.css", ROOT / "app.js", ROOT / "theme.js"])
+def site_version_inputs() -> list[Path]:
+    paths = [ROOT / "styles.css", ROOT / "app.js", ROOT / "theme.js", PROJECTS_FILE]
+    for config in (yaml.safe_load(PROJECTS_FILE.read_text(encoding="utf-8")) or {}).get("projects", []):
+        try:
+            repo = (ROOT / config["source"]["repo"]).resolve()
+            docs_root = (repo / config["source"]["docs_root"]).resolve()
+        except KeyError:
+            continue
+        if docs_root.exists():
+            paths.extend(sorted(docs_root.rglob("*.md")))
+    return paths
+
+
+ASSET_VERSION = content_hash_version(site_version_inputs())
 
 
 @dataclass
@@ -541,9 +554,9 @@ def copy_shell_files(target: Path) -> None:
         if src.exists():
             if name == "index.html":
                 html = src.read_text(encoding="utf-8")
-                html = html.replace('./styles.css"', f'./styles.css?v={ASSET_VERSION}"')
-                html = html.replace('./site-data.js"', f'./site-data.js?v={ASSET_VERSION}"')
-                html = html.replace('./app.js"', f'./app.js?v={ASSET_VERSION}"')
+                html = html.replace('href="./styles.css"', f'href="./styles.css?v={ASSET_VERSION}"')
+                html = html.replace('src="./site-data.js"', f'src="./site-data.js?v={ASSET_VERSION}"')
+                html = html.replace('src="./app.js"', f'src="./app.js?v={ASSET_VERSION}"')
                 (target / name).write_text(html, encoding="utf-8")
             else:
                 shutil.copy2(src, target / name)
