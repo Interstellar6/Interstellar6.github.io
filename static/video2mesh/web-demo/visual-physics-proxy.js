@@ -2,8 +2,11 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-robot-perf-20260711";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-controlfix2-20260711";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
+const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v4";
+const ALIGNMENT_NUDGE_STEP = 0.35;
+const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
 const COLLIDER_MODES = ["wire", "solid", "hidden"];
 const COLLIDER_LABELS = {
   wire: "wire + xray",
@@ -125,6 +128,9 @@ const state = {
   transformScale: 1,
   transformTranslation: { x: 0, y: 0, z: 0 },
   transformOffset: { x: 0, y: 0, z: 0 },
+  defaultViewerOffset: { x: 0, y: 0, z: 0 },
+  manualAlignmentOffset: { x: 0, y: 0, z: 0 },
+  manualAlignmentRotationDeg: { x: 0, y: 0, z: 0 },
   transformRotationMatrix: [
     [1, 0, 0],
     [0, 1, 0],
@@ -135,9 +141,12 @@ const state = {
   lastHitInfo: null,
   robotReady: false,
   robotEnabled: true,
-  robotFollowCamera: true,
+  robotFollowCamera: false,
   robotGrounded: false,
   robotBlocked: false,
+  robotObstacleCollision: false,
+  robotSpawnSource: "pending",
+  robotFloorYEstimate: null,
   robotPosition: { x: 0, y: 0, z: 0 },
   robotYaw: 0,
   robotSpeed: 0,
@@ -154,6 +163,11 @@ let pointerDown = null;
 let manifest = null;
 let colliderFaceSemantics = [];
 let colliderBounds = null;
+let visualMetaBox = null;
+let colliderMetaBox = null;
+let transformedVisualBounds = null;
+let baseVisualTransform = null;
+let robotFloorYEstimate = null;
 let lastFpsUpdate = 0;
 let frameCount = 0;
 
@@ -308,8 +322,26 @@ function roundedVector(vector) {
   };
 }
 
+function roundedEuler(euler) {
+  return {
+    x: Number(euler.x.toFixed(4)),
+    y: Number(euler.y.toFixed(4)),
+    z: Number(euler.z.toFixed(4)),
+  };
+}
+
 function roundedRotationRows(rows) {
   return rows.map((row) => row.map((value) => Number(Number(value).toFixed(8))));
+}
+
+function serializeBox(box) {
+  if (!box || box.isEmpty()) return null;
+  return {
+    min: roundedVector(box.min),
+    max: roundedVector(box.max),
+    center: roundedVector(boxCenter(box)),
+    size: roundedVector(boxSize(box)),
+  };
 }
 
 function currentVisualTransform() {
@@ -322,6 +354,22 @@ function currentVisualTransform() {
       state.transformTranslation.y,
       state.transformTranslation.z,
     ],
+    manualAlignmentOffset: [
+      state.manualAlignmentOffset.x,
+      state.manualAlignmentOffset.y,
+      state.manualAlignmentOffset.z,
+    ],
+    defaultViewerOffset: [
+      state.defaultViewerOffset.x,
+      state.defaultViewerOffset.y,
+      state.defaultViewerOffset.z,
+    ],
+    manualAlignmentRotationDeg: [
+      state.manualAlignmentRotationDeg.x,
+      state.manualAlignmentRotationDeg.y,
+      state.manualAlignmentRotationDeg.z,
+    ],
+    transformedVisualBounds: serializeBox(transformedVisualBounds),
     rmseSceneUnits: state.transformRmseSceneUnits,
   };
 }
@@ -341,12 +389,50 @@ function rotationRowsFromEulerDeg(degrees) {
   ];
 }
 
+function matrix4ToRotationRows(matrix) {
+  const elements = matrix.elements;
+  return [
+    [elements[0], elements[4], elements[8]],
+    [elements[1], elements[5], elements[9]],
+    [elements[2], elements[6], elements[10]],
+  ];
+}
+
+function cloneTransform(transform) {
+  return {
+    source: transform.source,
+    scale: Number(transform.scale),
+    rotationMatrix: normalizeRotationRows(transform.rotationMatrix),
+    translation: transform.translation.clone(),
+    rmseSceneUnits: transform.rmseSceneUnits,
+    maxErrorSceneUnits: transform.maxErrorSceneUnits,
+  };
+}
+
+function calculateTransformedBox(box, transform) {
+  if (!box || !transform) return null;
+  const rotation4 = rotationRowsToMatrix4(normalizeRotationRows(transform.rotationMatrix));
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(rotation4);
+  const matrix = new THREE.Matrix4().compose(
+    transform.translation,
+    quaternion,
+    new THREE.Vector3(transform.scale, transform.scale, transform.scale)
+  );
+  return box.clone().applyMatrix4(matrix);
+}
+
 function calculateVisualToColliderTransform(visualBox, colliderBox, alignmentMeta = null) {
   if (alignmentMeta?.rotationMatrix && Number.isFinite(Number(alignmentMeta.scale))) {
     const rotationMatrix = normalizeRotationRows(alignmentMeta.rotationMatrix);
     const translation = vectorFromArray(alignmentMeta.translation);
+    const defaultViewerOffset = vectorFromArray(alignmentMeta.viewerDefaultOffset);
+    translation.add(defaultViewerOffset);
+    state.defaultViewerOffset = roundedVector(defaultViewerOffset);
+    const source = alignmentMeta.viewerDefaultOffset
+      ? `${alignmentMeta.id || alignmentMeta.method || "manifest_alignment"}+viewer_default`
+      : (alignmentMeta.id || alignmentMeta.method || "manifest_alignment");
     return {
-      source: alignmentMeta.id || alignmentMeta.method || "manifest_alignment",
+      source,
       scale: Number(alignmentMeta.scale),
       rotationMatrix,
       translation,
@@ -366,6 +452,7 @@ function calculateVisualToColliderTransform(visualBox, colliderBox, alignmentMet
   const visualCenter = boxCenter(visualBox);
   const colliderCenter = boxCenter(colliderBox);
   const translation = colliderCenter.clone().sub(visualCenter.clone().multiplyScalar(scale));
+  state.defaultViewerOffset = { x: 0, y: 0, z: 0 };
   return {
     source: "bbox_center_max_extent_fallback",
     scale,
@@ -373,6 +460,91 @@ function calculateVisualToColliderTransform(visualBox, colliderBox, alignmentMet
     translation,
     rmseSceneUnits: null,
     maxErrorSceneUnits: null,
+  };
+}
+
+function sanitizeAlignmentVector(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    x: clampFinite(source.x, -12, 12, 0),
+    y: clampFinite(source.y, -12, 12, 0),
+    z: clampFinite(source.z, -12, 12, 0),
+  };
+}
+
+function sanitizeAlignmentEuler(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    x: clampFinite(source.x, -12, 12, 0),
+    y: clampFinite(source.y, -24, 24, 0),
+    z: clampFinite(source.z, -12, 12, 0),
+  };
+}
+
+function loadManualAlignment() {
+  try {
+    const raw = localStorage.getItem(ALIGNMENT_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    state.manualAlignmentOffset = sanitizeAlignmentVector(parsed.offset);
+    state.manualAlignmentRotationDeg = sanitizeAlignmentEuler(parsed.rotationDeg);
+  } catch (error) {
+    console.warn("Failed to load viewer alignment offset", error);
+    state.manualAlignmentOffset = { x: 0, y: 0, z: 0 };
+    state.manualAlignmentRotationDeg = { x: 0, y: 0, z: 0 };
+  }
+}
+
+function saveManualAlignment() {
+  const payload = {
+    offset: state.manualAlignmentOffset,
+    rotationDeg: state.manualAlignmentRotationDeg,
+    version: ASSET_VERSION,
+  };
+  localStorage.setItem(ALIGNMENT_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function manualAlignmentIsActive() {
+  const offset = state.manualAlignmentOffset;
+  const rotation = state.manualAlignmentRotationDeg;
+  return (
+    Math.abs(offset.x) > 1e-4 ||
+    Math.abs(offset.y) > 1e-4 ||
+    Math.abs(offset.z) > 1e-4 ||
+    Math.abs(rotation.x) > 1e-4 ||
+    Math.abs(rotation.y) > 1e-4 ||
+    Math.abs(rotation.z) > 1e-4
+  );
+}
+
+function buildEffectiveVisualTransform() {
+  if (!baseVisualTransform) return null;
+  const base = cloneTransform(baseVisualTransform);
+  const manualOffset = new THREE.Vector3(
+    state.manualAlignmentOffset.x,
+    state.manualAlignmentOffset.y,
+    state.manualAlignmentOffset.z
+  );
+  const manualRows = rotationRowsFromEulerDeg([
+    state.manualAlignmentRotationDeg.x,
+    state.manualAlignmentRotationDeg.y,
+    state.manualAlignmentRotationDeg.z,
+  ]);
+  const manualMatrix = rotationRowsToMatrix4(manualRows);
+  const baseMatrix = rotationRowsToMatrix4(base.rotationMatrix);
+  const combinedMatrix = manualMatrix.clone().multiply(baseMatrix);
+
+  const baseBox = calculateTransformedBox(visualMetaBox, base);
+  const pivot = baseBox ? boxCenter(baseBox) : base.translation.clone();
+  const adjustedTranslation = base.translation.clone().sub(pivot).applyMatrix4(manualMatrix).add(pivot).add(manualOffset);
+  const active = manualAlignmentIsActive();
+  return {
+    source: active ? `${base.source}+viewer_adjust` : base.source,
+    scale: base.scale,
+    rotationMatrix: matrix4ToRotationRows(combinedMatrix),
+    translation: adjustedTranslation,
+    rmseSceneUnits: base.rmseSceneUnits,
+    maxErrorSceneUnits: base.maxErrorSceneUnits,
   };
 }
 
@@ -384,6 +556,7 @@ function applyVisualTransform(transform, { announce = false } = {}) {
   visualSplat.quaternion.setFromRotationMatrix(rotation4);
   visualSplat.position.copy(transform.translation);
   visualSplat.updateMatrixWorld(true);
+  transformedVisualBounds = calculateTransformedBox(visualMetaBox, transform);
 
   state.transformSource = transform.source || "manual";
   state.transformScale = Number(transform.scale.toFixed(8));
@@ -395,6 +568,49 @@ function applyVisualTransform(transform, { announce = false } = {}) {
     : null;
   updateHud();
   if (announce) showToast(`Visual alignment: ${state.transformSource}`);
+}
+
+function applyEffectiveVisualTransform({ announce = false } = {}) {
+  const transform = buildEffectiveVisualTransform();
+  if (!transform) return null;
+  if (visualSplat) applyVisualTransform(transform, { announce });
+  return transform;
+}
+
+function nudgeVisualAlignment(delta) {
+  const current = new THREE.Vector3(
+    state.manualAlignmentOffset.x,
+    state.manualAlignmentOffset.y,
+    state.manualAlignmentOffset.z
+  );
+  current.add(delta);
+  state.manualAlignmentOffset = sanitizeAlignmentVector(current);
+  saveManualAlignment();
+  applyEffectiveVisualTransform();
+  updateAlignmentButtons();
+  showToast(`Visual offset ${state.manualAlignmentOffset.x.toFixed(2)}, ${state.manualAlignmentOffset.y.toFixed(2)}, ${state.manualAlignmentOffset.z.toFixed(2)}.`);
+}
+
+function nudgeVisualRotation(axis, deltaDeg) {
+  if (!["x", "y", "z"].includes(axis)) return;
+  const next = {
+    ...state.manualAlignmentRotationDeg,
+    [axis]: state.manualAlignmentRotationDeg[axis] + deltaDeg,
+  };
+  state.manualAlignmentRotationDeg = sanitizeAlignmentEuler(next);
+  saveManualAlignment();
+  applyEffectiveVisualTransform();
+  updateAlignmentButtons();
+  showToast(`Visual rotation ${axis.toUpperCase()} ${state.manualAlignmentRotationDeg[axis].toFixed(1)} deg.`);
+}
+
+function resetManualAlignment() {
+  state.manualAlignmentOffset = { x: 0, y: 0, z: 0 };
+  state.manualAlignmentRotationDeg = { x: 0, y: 0, z: 0 };
+  saveManualAlignment();
+  applyEffectiveVisualTransform({ announce: true });
+  updateAlignmentButtons();
+  showToast("Viewer alignment reset to default manifest correction.");
 }
 
 function buildManualVisualTransform(patch = {}) {
@@ -421,10 +637,23 @@ function buildManualVisualTransform(patch = {}) {
 function exposeDebugApi() {
   window.__setVisualAlignment = (patch = {}) => {
     const transform = buildManualVisualTransform(patch);
+    baseVisualTransform = transform;
     applyVisualTransform(transform, { announce: true });
     return syncDebugState();
   };
   window.__getVisualAlignment = () => currentVisualTransform();
+  window.__nudgeVisualAlignment = (delta = {}) => {
+    nudgeVisualAlignment(new THREE.Vector3(
+      Number(delta.x) || 0,
+      Number(delta.y) || 0,
+      Number(delta.z) || 0
+    ));
+    return syncDebugState();
+  };
+  window.__resetVisualAlignmentOffset = () => {
+    resetManualAlignment();
+    return syncDebugState();
+  };
 }
 
 function syncDebugState() {
@@ -436,6 +665,9 @@ function syncDebugState() {
     colliderVisible: state.colliderRenderMode !== "hidden",
     rendererPixelRatio: Number(renderer.getPixelRatio().toFixed(3)),
     robotVisible: Boolean(robotGroup?.visible),
+    colliderBounds: serializeBox(colliderBounds),
+    visualMetaBounds: serializeBox(visualMetaBox),
+    transformedVisualBounds: serializeBox(transformedVisualBounds),
   };
   window.__visualPhysicsDemoState = snapshot;
   document.documentElement.dataset.visualPhysicsState = JSON.stringify(snapshot);
@@ -456,10 +688,13 @@ function updateHud() {
     state.transformSource === "pending"
       ? "alignment pending"
       : `${state.transformSource}${state.transformRmseSceneUnits ? ` rmse ${state.transformRmseSceneUnits}` : ""}`,
+    manualAlignmentIsActive()
+      ? `manual offset ${state.manualAlignmentOffset.x.toFixed(2)}/${state.manualAlignmentOffset.y.toFixed(2)}/${state.manualAlignmentOffset.z.toFixed(2)} yaw ${state.manualAlignmentRotationDeg.y.toFixed(1)}`
+      : (state.transformSource.includes("viewer_default") ? "bbox-center viewer correction" : "manifest alignment"),
     `${COLLIDER_LABELS[state.colliderRenderMode]} collider`,
     `${state.cameraMode} camera`,
     `${QUALITY_LABELS[state.qualityMode]} dpr ${state.actualPixelRatio}`,
-    state.robotEnabled ? "robot uses mesh ground probe" : "robot hidden",
+    state.robotEnabled ? `robot ${state.robotObstacleCollision ? "collides with mesh" : "ground-only"} ${state.robotSpawnSource}` : "robot hidden",
     "raycast ignores visual splats",
   ].join(" · ");
   syncDebugState();
@@ -539,6 +774,7 @@ async function loadVisualSplat(transform) {
   state.visualReady = true;
   showToast("AnySplat Gaussian PLY visual layer loaded.");
   updateHud();
+  setLayerVisibility();
 }
 
 function parseSemanticMeshPly(text) {
@@ -611,6 +847,56 @@ function parseSemanticMeshPly(text) {
   return { geometry, faceSemantics, vertexCount, faceCount };
 }
 
+function estimateMainWalkableFloorY(geometry) {
+  const index = geometry.index;
+  const position = geometry.getAttribute("position");
+  const faceCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+  const bounds = geometry.boundingBox;
+  const yLimit = bounds.min.y + boxSize(bounds).y * 0.45;
+  const bins = new Map();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+
+  const readVertex = (vertexIndex, target) => {
+    target.set(position.getX(vertexIndex), position.getY(vertexIndex), position.getZ(vertexIndex));
+  };
+
+  for (let face = 0; face < faceCount; face += 1) {
+    const base = face * 3;
+    const ia = index ? index.getX(base) : base;
+    const ib = index ? index.getX(base + 1) : base + 1;
+    const ic = index ? index.getX(base + 2) : base + 2;
+    readVertex(ia, a);
+    readVertex(ib, b);
+    readVertex(ic, c);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    normal.crossVectors(ab, ac);
+    const area2 = normal.length();
+    if (area2 < 1e-7) continue;
+    normal.divideScalar(area2);
+    if (normal.y < 0.55) continue;
+    const y = (a.y + b.y + c.y) / 3;
+    if (y > yLimit) continue;
+    const bin = Math.round(y * 2) / 2;
+    bins.set(bin, (bins.get(bin) || 0) + area2 * 0.5);
+  }
+
+  let bestY = null;
+  let bestArea = 0;
+  for (const [y, area] of bins) {
+    if (area > bestArea) {
+      bestY = y;
+      bestArea = area;
+    }
+  }
+  return Number.isFinite(bestY) ? bestY : null;
+}
+
 async function loadColliderMesh() {
   const { asset, bytes } = await getChunkedBytes("collider");
   state.colliderAssetId = asset.id;
@@ -624,6 +910,10 @@ async function loadColliderMesh() {
   const parsed = parseSemanticMeshPly(text);
   colliderFaceSemantics = parsed.faceSemantics;
   colliderBounds = parsed.geometry.boundingBox.clone();
+  robotFloorYEstimate = estimateMainWalkableFloorY(parsed.geometry);
+  state.robotFloorYEstimate = Number.isFinite(robotFloorYEstimate)
+    ? Number(robotFloorYEstimate.toFixed(3))
+    : null;
 
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -793,7 +1083,7 @@ function getColliderProbeHeights() {
   };
 }
 
-function groundProbe(position) {
+function groundProbe(position, { preferFloor = true } = {}) {
   if (!colliderMesh) return null;
   const { originY, range } = getColliderProbeHeights();
   groundRaycaster.set(
@@ -804,16 +1094,23 @@ function groundProbe(position) {
   groundRaycaster.far = range;
   const hits = groundRaycaster.intersectObject(colliderMesh, false);
   if (!hits.length) return null;
-  const walkable = hits.find((hit) => {
+  const walkableHits = hits.filter((hit) => {
     const normal = hit.face?.normal.clone() || ROBOT_UP.clone();
     normal.transformDirection(hit.object.matrixWorld);
-    return normal.dot(ROBOT_UP) > 0.08;
+    return normal.dot(ROBOT_UP) > 0.3;
   });
-  return walkable || hits[0];
+  if (!walkableHits.length) return hits[0];
+  if (preferFloor && Number.isFinite(robotFloorYEstimate)) {
+    const floorHit = walkableHits
+      .filter((hit) => Math.abs(hit.point.y - robotFloorYEstimate) <= 2.4)
+      .sort((a, b) => Math.abs(a.point.y - robotFloorYEstimate) - Math.abs(b.point.y - robotFloorYEstimate))[0];
+    if (floorHit) return floorHit;
+  }
+  return walkableHits[0];
 }
 
 function isRobotStepBlocked(fromPosition, toPosition) {
-  if (!colliderMesh) return false;
+  if (!colliderMesh || !state.robotObstacleCollision) return false;
   const direction = toPosition.clone().sub(fromPosition);
   direction.y = 0;
   const distance = direction.length();
@@ -832,6 +1129,100 @@ function isRobotStepBlocked(fromPosition, toPosition) {
   });
 }
 
+function isInsideColliderFootprint(position, margin = 0.8) {
+  if (!colliderBounds) return false;
+  return (
+    position.x >= colliderBounds.min.x - margin &&
+    position.x <= colliderBounds.max.x + margin &&
+    position.z >= colliderBounds.min.z - margin &&
+    position.z <= colliderBounds.max.z + margin
+  );
+}
+
+function findGroundForStep(fromPosition, move, distance) {
+  const direction = move.clone().normalize();
+  const right = new THREE.Vector3().crossVectors(direction, ROBOT_UP).normalize();
+  const distances = [distance, distance * 0.68, distance * 0.42, distance * 0.24];
+  const lateralOffsets = [0, 0.28, -0.28, 0.58, -0.58, 0.92, -0.92];
+  const hits = [];
+
+  for (const travel of distances) {
+    const base = fromPosition.clone().addScaledVector(direction, travel);
+    for (const lateral of lateralOffsets) {
+      const candidate = base.clone().addScaledVector(right, lateral);
+      const hit = groundProbe(candidate, { preferFloor: true });
+      if (!hit) continue;
+      const intended = fromPosition.clone().addScaledVector(direction, distance);
+      const lateralScore = Math.hypot(hit.point.x - intended.x, hit.point.z - intended.z);
+      const yScore = Number.isFinite(robotFloorYEstimate)
+        ? Math.abs(hit.point.y - robotFloorYEstimate) * 0.2
+        : 0;
+      hits.push({ hit, score: lateralScore + yScore });
+    }
+  }
+
+  hits.sort((a, b) => a.score - b.score);
+  if (hits.length) return { point: hits[0].hit.point.clone(), source: "mesh-nearby" };
+
+  const fallback = fromPosition.clone().addScaledVector(direction, distance);
+  if (!state.robotObstacleCollision && Number.isFinite(robotFloorYEstimate) && isInsideColliderFootprint(fallback)) {
+    fallback.y = robotFloorYEstimate;
+    return { point: fallback, source: "floor-plane-fallback" };
+  }
+  return null;
+}
+
+function respawnRobotAt(point, source = "manual") {
+  if (!colliderMesh) return false;
+  if (!robotGroup) {
+    robotGroup = createRobot();
+    robotLayer.add(robotGroup);
+  }
+  const spawn = point.clone();
+  spawn.y += robotGroup.userData.groundOffset;
+  robotGroup.position.copy(spawn);
+  robotGroup.rotation.y = Math.atan2(camera.position.x - spawn.x, camera.position.z - spawn.z);
+  robotGroundY = spawn.y;
+
+  state.robotReady = true;
+  state.robotGrounded = true;
+  state.robotSpawnSource = source;
+  state.robotPosition = roundedVector(robotGroup.position);
+  state.robotYaw = Number(robotGroup.rotation.y.toFixed(4));
+  if (state.robotFollowCamera) updateRobotFollowCamera(0, true);
+  updateHud();
+  return true;
+}
+
+function findRobotSpawnHit() {
+  if (!colliderMesh || !colliderBounds) return null;
+  const center = transformedVisualBounds ? boxCenter(transformedVisualBounds) : boxCenter(colliderBounds);
+  const size = boxSize(colliderBounds);
+  const zOffsets = [-0.18, -0.28, -0.08, 0.08, 0.2, -0.38].map((value) => value * size.z);
+  const xOffsets = [0, -0.08, 0.08, -0.16, 0.16].map((value) => value * size.x);
+  const candidates = [];
+  for (const z of zOffsets) {
+    for (const x of xOffsets) {
+      candidates.push(center.clone().add(new THREE.Vector3(x, 0, z)));
+    }
+  }
+  candidates.push(boxCenter(colliderBounds).add(new THREE.Vector3(0, 0, -size.z * 0.28)));
+  candidates.push(boxCenter(colliderBounds).add(new THREE.Vector3(size.x * 0.1, 0, -size.z * 0.22)));
+
+  const scoredHits = [];
+  for (const candidate of candidates) {
+    const hit = groundProbe(candidate, { preferFloor: true });
+    if (!hit) continue;
+    const yScore = Number.isFinite(robotFloorYEstimate)
+      ? Math.abs(hit.point.y - robotFloorYEstimate)
+      : 0;
+    const centerScore = Math.hypot(hit.point.x - center.x, hit.point.z - center.z) * 0.035;
+    scoredHits.push({ hit, score: yScore + centerScore });
+  }
+  scoredHits.sort((a, b) => a.score - b.score);
+  return scoredHits[0]?.hit || null;
+}
+
 function spawnRobotAtBounds() {
   if (!colliderMesh || !colliderBounds) return;
   if (!robotGroup) {
@@ -839,33 +1230,14 @@ function spawnRobotAtBounds() {
     robotLayer.add(robotGroup);
   }
 
-  const center = boxCenter(colliderBounds);
-  const size = boxSize(colliderBounds);
-  const candidates = [
-    center.clone(),
-    center.clone().add(new THREE.Vector3(size.x * -0.12, 0, size.z * -0.12)),
-    center.clone().add(new THREE.Vector3(size.x * 0.16, 0, size.z * -0.08)),
-    center.clone().add(new THREE.Vector3(size.x * -0.18, 0, size.z * 0.1)),
-    center.clone().add(new THREE.Vector3(size.x * 0.08, 0, size.z * 0.18)),
-  ];
-
-  let spawnHit = null;
-  for (const candidate of candidates) {
-    spawnHit = groundProbe(candidate);
-    if (spawnHit) break;
+  const spawnHit = findRobotSpawnHit();
+  if (spawnHit) {
+    respawnRobotAt(spawnHit.point, "auto-floor");
+    return;
   }
-  const spawn = spawnHit ? spawnHit.point.clone() : center;
-  spawn.y += robotGroup.userData.groundOffset;
-  robotGroup.position.copy(spawn);
-  robotGroup.rotation.y = Math.atan2(camera.position.x - spawn.x, camera.position.z - spawn.z);
-  robotGroundY = spawn.y;
-
-  state.robotReady = true;
-  state.robotGrounded = Boolean(spawnHit);
-  state.robotPosition = roundedVector(robotGroup.position);
-  state.robotYaw = Number(robotGroup.rotation.y.toFixed(4));
-  if (state.robotFollowCamera) updateRobotFollowCamera(0, true);
-  updateHud();
+  const fallback = boxCenter(colliderBounds);
+  fallback.y = Number.isFinite(robotFloorYEstimate) ? robotFloorYEstimate : fallback.y;
+  respawnRobotAt(fallback, "bbox-fallback");
 }
 
 function getCameraPlanarBasis() {
@@ -889,6 +1261,73 @@ function getRobotMoveVector() {
   return move;
 }
 
+function moveRobotOnMesh(move, distance) {
+  if (!robotGroup || !colliderMesh || move.lengthSq() <= 0) return false;
+  const current = robotGroup.position.clone();
+  const target = current.clone().addScaledVector(move.clone().normalize(), distance);
+  state.robotBlocked = false;
+
+  if (!state.robotObstacleCollision && Number.isFinite(robotFloorYEstimate) && isInsideColliderFootprint(target)) {
+    target.y = robotFloorYEstimate + robotGroup.userData.groundOffset;
+    robotGroup.position.copy(target);
+    robotGroundY = robotGroup.position.y;
+    state.robotGrounded = true;
+    const targetYaw = Math.atan2(move.x, move.z);
+    const yawDelta = Math.atan2(
+      Math.sin(targetYaw - robotGroup.rotation.y),
+      Math.cos(targetYaw - robotGroup.rotation.y)
+    );
+    robotGroup.rotation.y += yawDelta;
+    state.robotPosition = roundedVector(robotGroup.position);
+    state.robotYaw = Number(robotGroup.rotation.y.toFixed(4));
+    return true;
+  }
+
+  if (isRobotStepBlocked(current, target)) {
+    state.robotBlocked = true;
+    return false;
+  }
+  const stepGround = findGroundForStep(current, move, distance);
+  if (!stepGround) {
+    state.robotBlocked = true;
+    state.robotGrounded = true;
+    return false;
+  }
+  const next = stepGround.point.clone();
+  next.y += robotGroup.userData.groundOffset;
+  const maxStep = stepGround.source === "floor-plane-fallback" ? 1.25 : 0.92;
+  if (robotGroundY != null && Math.abs(next.y - robotGroundY) > maxStep) {
+    state.robotBlocked = true;
+    return false;
+  }
+  robotGroup.position.copy(next);
+  robotGroundY = robotGroup.position.y;
+  state.robotGrounded = true;
+  const targetYaw = Math.atan2(move.x, move.z);
+  const yawDelta = Math.atan2(
+    Math.sin(targetYaw - robotGroup.rotation.y),
+    Math.cos(targetYaw - robotGroup.rotation.y)
+  );
+  robotGroup.rotation.y += yawDelta;
+  state.robotPosition = roundedVector(robotGroup.position);
+  state.robotYaw = Number(robotGroup.rotation.y.toFixed(4));
+  return true;
+}
+
+function stepRobotByCamera(direction) {
+  if (!robotGroup || !state.robotEnabled) return;
+  const { forward, right } = getCameraPlanarBasis();
+  const move = new THREE.Vector3();
+  if (direction === "forward") move.copy(forward);
+  if (direction === "back") move.copy(forward).multiplyScalar(-1);
+  if (direction === "left") move.copy(right).multiplyScalar(-1);
+  if (direction === "right") move.copy(right);
+  const moved = moveRobotOnMesh(move, 0.85);
+  if (state.robotFollowCamera) updateRobotFollowCamera(0, true);
+  updateHud();
+  showToast(moved ? "Robot stepped on mesh floor." : "Robot step blocked by mesh probe.");
+}
+
 function updateRobot(dt) {
   if (!robotGroup || !state.robotEnabled) {
     state.robotSpeed = 0;
@@ -906,28 +1345,7 @@ function updateRobot(dt) {
   state.robotSpeed = isMoving ? speed : 0;
 
   if (isMoving) {
-    const current = robotGroup.position.clone();
-    const target = current.clone().addScaledVector(move, speed * dt);
-    if (!isRobotStepBlocked(current, target)) {
-      const hit = groundProbe(target);
-      if (hit) {
-        const next = hit.point.clone();
-        next.y += robotGroup.userData.groundOffset;
-        const maxStep = 0.78;
-        if (robotGroundY == null || Math.abs(next.y - robotGroundY) <= maxStep) {
-          robotGroup.position.lerp(next, 0.82);
-          robotGroundY = robotGroup.position.y;
-          state.robotGrounded = true;
-        } else {
-          state.robotBlocked = true;
-        }
-      } else {
-        state.robotBlocked = true;
-        state.robotGrounded = false;
-      }
-    } else {
-      state.robotBlocked = true;
-    }
+    moveRobotOnMesh(move, speed * dt);
 
     const targetYaw = Math.atan2(move.x, move.z);
     const yawDelta = Math.atan2(
@@ -963,6 +1381,32 @@ function updateRobotFollowCamera(dt, immediate = false) {
   controls.update();
 }
 
+function frameCameraToInterior({ announce = false } = {}) {
+  const bounds = transformedVisualBounds || colliderBounds;
+  if (!bounds || bounds.isEmpty()) return;
+  const center = boxCenter(bounds);
+  const size = boxSize(bounds);
+  const floorY = Number.isFinite(robotFloorYEstimate) ? robotFloorYEstimate : bounds.min.y;
+  const anchor = robotGroup?.position?.clone() || center.clone();
+  anchor.y = floorY + 1.15;
+  const roomDepth = Math.max(6, Math.min(13, size.z * 0.28));
+  const roomSide = Math.max(3.2, Math.min(7.5, size.x * 0.13));
+  const eye = anchor.clone().add(new THREE.Vector3(roomSide, 2.25, -roomDepth));
+  const target = anchor.clone().add(new THREE.Vector3(0, 0.35, Math.max(2.5, size.z * 0.04)));
+  state.robotFollowCamera = false;
+  state.cameraMode = "orbit";
+  controls.enabled = true;
+  controls.target.copy(target);
+  camera.position.copy(eye);
+  camera.near = 0.02;
+  camera.far = Math.max(220, Math.max(size.x, size.y, size.z) * 12);
+  camera.updateProjectionMatrix();
+  controls.maxDistance = Math.max(80, Math.max(size.x, size.y, size.z) * 5);
+  controls.update();
+  setLayerVisibility();
+  if (announce) showToast("Interior camera: orbit target moved inside the room.");
+}
+
 function updateAdaptiveQuality(fps) {
   if (!state.adaptivePixelRatio || state.qualityMode !== "balanced") return;
   const current = renderer.getPixelRatio();
@@ -990,6 +1434,21 @@ function frameCameraToBounds(bounds, force = false) {
   controls.maxDistance = Math.max(80, radius * 5);
   controls.update();
   if (force) showToast("View reset to collider/visual proxy bounds.");
+}
+
+function respawnRobotAtCurrentViewTarget() {
+  const hit = groundProbe(controls.target, { preferFloor: true });
+  if (hit && respawnRobotAt(hit.point, "view-target")) {
+    showToast("Robot respawned near current view target.");
+    return true;
+  }
+  const spawnHit = findRobotSpawnHit();
+  if (spawnHit && respawnRobotAt(spawnHit.point, "auto-floor")) {
+    showToast("Robot respawned on estimated room floor.");
+    return true;
+  }
+  showToast("No walkable collider point found for robot respawn.");
+  return false;
 }
 
 function markHit(point, normal) {
@@ -1034,7 +1493,7 @@ function describeHit(hit, normal) {
   };
 }
 
-function inspectColliderAt(clientX, clientY, { focus = true } = {}) {
+function inspectColliderAt(clientX, clientY, { focus = true, spawnRobot = false } = {}) {
   if (!colliderMesh) return;
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -1060,10 +1519,15 @@ function inspectColliderAt(clientX, clientY, { focus = true } = {}) {
     camera.position.copy(hit.point).add(offset);
     controls.update();
   }
+  if (spawnRobot) {
+    respawnRobotAt(hit.point, "shift-click");
+  }
   updateHud();
   const idText = state.lastHitInfo.objectId ?? "n/a";
   const probText = state.lastHitInfo.objectProbability ?? "n/a";
-  showToast(`Collider hit face ${state.lastHitInfo.faceIndex}, object_id ${idText}, p=${probText}.`);
+  showToast(spawnRobot
+    ? `Robot respawned on collider face ${state.lastHitInfo.faceIndex}.`
+    : `Collider hit face ${state.lastHitInfo.faceIndex}, object_id ${idText}, p=${probText}.`);
 }
 
 function onPointerDown(event) {
@@ -1079,7 +1543,7 @@ function onPointerUp(event) {
   const elapsed = performance.now() - pointerDown.time;
   pointerDown = null;
   if (Math.hypot(dx, dy) > 5 || elapsed > 360) return;
-  inspectColliderAt(event.clientX, event.clientY);
+  inspectColliderAt(event.clientX, event.clientY, { spawnRobot: event.shiftKey });
 }
 
 function updateFlyCamera(dt) {
@@ -1123,6 +1587,18 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
+function updateAlignmentButtons() {
+  const offset = state.manualAlignmentOffset;
+  const rotation = state.manualAlignmentRotationDeg;
+  const defaultOffset = state.defaultViewerOffset;
+  const label = document.querySelector("#alignmentReadout");
+  if (label) {
+    label.textContent = `default ${defaultOffset.x.toFixed(2)} ${defaultOffset.y.toFixed(2)} ${defaultOffset.z.toFixed(2)} · manual ${offset.x.toFixed(2)} ${offset.y.toFixed(2)} ${offset.z.toFixed(2)} · yaw ${rotation.y.toFixed(1)}°`;
+  }
+  const reset = document.querySelector("#resetAlignment");
+  if (reset) reset.classList.toggle("is-active", manualAlignmentIsActive());
+}
+
 function setLayerVisibility() {
   visualLayer.visible = state.showVisual;
   sparkRenderer.visible = state.showVisual && state.visualReady;
@@ -1135,12 +1611,16 @@ function setLayerVisibility() {
   document.querySelector("#toggleCameraMode").textContent = state.cameraMode === "fly" ? "Fly Camera" : "Orbit Camera";
   document.querySelector("#toggleRobot").classList.toggle("is-active", state.robotEnabled);
   document.querySelector("#toggleRobotFollow").classList.toggle("is-active", state.robotFollowCamera);
+  document.querySelector("#toggleRobotFollow").textContent = state.robotFollowCamera ? "Follow On" : "Follow Off";
+  document.querySelector("#toggleRobotCollision").classList.toggle("is-active", state.robotObstacleCollision);
+  document.querySelector("#toggleRobotCollision").textContent = state.robotObstacleCollision ? "Collision On" : "Collision Off";
   document.querySelector("#toggleQuality").classList.toggle("is-active", state.qualityMode === "performance");
   document.querySelector("#toggleQuality").textContent = state.qualityMode === "performance" ? "Performance" : "Balanced";
   controls.enabled = state.cameraMode === "orbit";
   robotLayer.visible = state.robotEnabled;
   if (robotGroup) robotGroup.visible = state.robotEnabled;
   applyColliderMode();
+  updateAlignmentButtons();
   updateHud();
 }
 
@@ -1189,9 +1669,21 @@ function bindEvents() {
     setLayerVisibility();
     showToast(state.robotFollowCamera ? "Camera follows robot." : "Camera follow disabled.");
   });
+  document.querySelector("#toggleRobotCollision").addEventListener("click", () => {
+    state.robotObstacleCollision = !state.robotObstacleCollision;
+    setLayerVisibility();
+    showToast(state.robotObstacleCollision ? "Robot obstacle rays enabled." : "Robot uses ground-only movement.");
+  });
   document.querySelector("#toggleQuality").addEventListener("click", () => {
     state.qualityMode = nextValue(QUALITY_MODES, state.qualityMode);
     applyQualityMode({ announce: true });
+    setLayerVisibility();
+  });
+  document.querySelector("#interiorView").addEventListener("click", () => {
+    frameCameraToInterior({ announce: true });
+  });
+  document.querySelector("#respawnRobot").addEventListener("click", () => {
+    respawnRobotAtCurrentViewTarget();
     setLayerVisibility();
   });
   document.querySelector("#resetView").addEventListener("click", () => {
@@ -1202,6 +1694,24 @@ function bindEvents() {
     }
     frameCameraToBounds(colliderBounds, true);
   });
+  document.querySelectorAll("[data-robot-step]").forEach((button) => {
+    button.addEventListener("click", () => stepRobotByCamera(button.dataset.robotStep));
+  });
+  document.querySelectorAll("[data-align-nudge]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [axis, direction] = button.dataset.alignNudge.split(":");
+      const delta = new THREE.Vector3();
+      delta[axis] = Number(direction) * ALIGNMENT_NUDGE_STEP;
+      nudgeVisualAlignment(delta);
+    });
+  });
+  document.querySelectorAll("[data-align-rotate]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [axis, direction] = button.dataset.alignRotate.split(":");
+      nudgeVisualRotation(axis, Number(direction) * ALIGNMENT_ROTATION_STEP_DEG);
+    });
+  });
+  document.querySelector("#resetAlignment").addEventListener("click", resetManualAlignment);
   exposeDebugApi();
 }
 
@@ -1211,14 +1721,18 @@ async function init() {
     resize();
     updateHud();
     await loadManifest();
-    const visualBox = boxFromMeta(manifest.assets.visual);
-    const colliderBox = boxFromMeta(manifest.assets.collider);
-    const transform = calculateVisualToColliderTransform(visualBox, colliderBox, manifest.alignment);
+    loadManualAlignment();
+    visualMetaBox = boxFromMeta(manifest.assets.visual);
+    colliderMetaBox = boxFromMeta(manifest.assets.collider);
+    baseVisualTransform = calculateVisualToColliderTransform(visualMetaBox, colliderMetaBox, manifest.alignment);
     await loadColliderMesh();
-    frameCameraToBounds(colliderBounds);
+    transformedVisualBounds = calculateTransformedBox(visualMetaBox, buildEffectiveVisualTransform());
     spawnRobotAtBounds();
-    await loadVisualSplat(transform);
+    frameCameraToInterior();
     applySemanticColorMode();
+    applyQualityMode();
+    setLayerVisibility();
+    await loadVisualSplat(buildEffectiveVisualTransform());
     applyQualityMode();
     setLayerVisibility();
     syncDebugState();

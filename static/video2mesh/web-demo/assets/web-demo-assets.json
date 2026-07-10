@@ -1,5 +1,5 @@
 {
-  "version": "local-bedroom4-anysplat-semanticmesh-robot-perf-20260711",
+  "version": "local-bedroom4-anysplat-semanticmesh-controlfix2-20260711",
   "chunkSize": 20971520,
   "alignment": {
     "id": "anysplat_to_video2mesh_camera_umeyama_20260711",
@@ -19,6 +19,8 @@
     ],
     "rmseSceneUnits": 0.19981348339550214,
     "maxErrorSceneUnits": 0.34326188933929913,
+    "viewerDefaultOffset": [1.182589, -0.121857, 0.098423],
+    "viewerDefaultOffsetNote": "Viewer-only center correction from transformed AnySplat bbox center to semantic collider bbox center. Keeps real Sim(3) camera alignment visible while improving first-load overlay; use UI nudge controls for local inspection.",
     "scale": 21.012695035023306,
     "rotationMatrix": [
       [0.97358102, -0.14812615, 0.17377754],

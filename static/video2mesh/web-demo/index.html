@@ -17,7 +17,7 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-robot-perf-20260711" />
+    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-controlfix2-20260711" />
   </head>
   <body>
     <canvas id="sceneCanvas" tabindex="0" aria-label="AnySplat 3DGS visual layer with semantic mesh collider proxy"></canvas>
@@ -59,20 +59,47 @@
           <button id="toggleSemantic" class="is-active" type="button">Semantic color</button>
           <button id="toggleCameraMode" type="button">Orbit Camera</button>
           <button id="toggleRobot" class="is-active" type="button">Robot</button>
-          <button id="toggleRobotFollow" class="is-active" type="button">Follow Robot</button>
+          <button id="toggleRobotFollow" type="button">Follow Off</button>
+          <button id="toggleRobotCollision" type="button">Collision Off</button>
           <button id="toggleQuality" type="button">Balanced</button>
+        </div>
+        <div class="control-row">
+          <button id="interiorView" type="button">Interior View</button>
+          <button id="respawnRobot" type="button">Respawn Robot</button>
           <button id="resetView" type="button">Reset View</button>
+        </div>
+        <div class="control-row robot-step-row" aria-label="Robot step controls">
+          <button data-robot-step="left" type="button">←</button>
+          <button data-robot-step="forward" type="button">↑</button>
+          <button data-robot-step="back" type="button">↓</button>
+          <button data-robot-step="right" type="button">→</button>
+        </div>
+        <div class="control-row align-row" aria-label="Viewer alignment controls">
+          <span id="alignmentReadout" class="control-readout">default 0.00 0.00 0.00 · manual 0.00 0.00 0.00 · yaw 0.0°</span>
+          <button data-align-nudge="x:-1" type="button">X-</button>
+          <button data-align-nudge="x:1" type="button">X+</button>
+          <button data-align-nudge="y:-1" type="button">Y-</button>
+          <button data-align-nudge="y:1" type="button">Y+</button>
+          <button data-align-nudge="z:-1" type="button">Z-</button>
+          <button data-align-nudge="z:1" type="button">Z+</button>
+          <button data-align-rotate="x:-1" type="button">Pitch-</button>
+          <button data-align-rotate="x:1" type="button">Pitch+</button>
+          <button data-align-rotate="y:-1" type="button">Yaw-</button>
+          <button data-align-rotate="y:1" type="button">Yaw+</button>
+          <button data-align-rotate="z:-1" type="button">Roll-</button>
+          <button data-align-rotate="z:1" type="button">Roll+</button>
+          <button id="resetAlignment" type="button">Align Reset</button>
         </div>
         <div class="legend">
           <span><i class="swatch visual"></i> AnySplat Gaussian PLY：Spark 3DGS renderer，关闭视觉层 raycast</span>
           <span><i class="swatch mesh"></i> semantic mesh PLY：Mesh collider proxy，保留 object_id / probability / source_face</span>
-          <span><i class="swatch robot"></i> 小机器人：位置和移动只依赖 mesh collider 的地面探测</span>
-          <span><i class="swatch ray"></i> 单击场景只命中 collider face，红点显示 raycast 结果</span>
+          <span><i class="swatch robot"></i> 小机器人：默认只依赖 mesh 地面探测，Shift+单击 collider 可重生</span>
+          <span><i class="swatch ray"></i> Align 控件是 viewer 级临时微调，真实配准仍以 manifest Sim(3) 为基线</span>
         </div>
       </div>
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-robot-perf-20260711"></script>
+    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-controlfix2-20260711"></script>
   </body>
 </html>
