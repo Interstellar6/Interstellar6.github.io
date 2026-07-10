@@ -574,6 +574,13 @@ body[data-view="admin"] .toc-edge-toggle {
 .open-button,
 .login-card button,
 .account-login button { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.project-demo-link {
+  white-space: nowrap;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 760;
+}
 .ghost-button:hover,
 .theme-button:hover { background: var(--accent-soft); border-color: var(--accent); }
 
@@ -1429,5 +1436,6 @@ html[data-theme="light"] .doc-body pre {
   .intake-item { border-right: 0; border-bottom: 1px solid var(--line); }
   .intake-item:last-child { border-bottom: 0; }
   .search-box { min-width: 0; width: 100%; }
+  .project-demo-link { justify-self: start; }
   .account-popover { right: auto; left: 0; }
 }

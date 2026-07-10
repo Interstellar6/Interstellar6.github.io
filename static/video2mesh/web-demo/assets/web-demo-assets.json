@@ -1,6 +1,32 @@
 {
-  "version": "local-bedroom4-anysplat-semanticmesh-20260711",
+  "version": "local-bedroom4-anysplat-semanticmesh-align-20260711",
   "chunkSize": 20971520,
+  "alignment": {
+    "id": "anysplat_to_video2mesh_camera_umeyama_20260711",
+    "method": "camera_center_sim3_from_frame_similarity_matches",
+    "note": "Viewer alignment only. Frame matches were inferred from local image similarity between AnySplat's 10 sampled frames and Video2Mesh's 50 COLMAP frames, then fitted with Umeyama Sim(3) from AnySplat extrinsic translation to COLMAP camera centers.",
+    "frameMatches": [
+      [0, 0],
+      [1, 5],
+      [2, 11],
+      [3, 16],
+      [4, 22],
+      [5, 27],
+      [6, 33],
+      [7, 38],
+      [8, 44],
+      [9, 49]
+    ],
+    "rmseSceneUnits": 0.19981348339550214,
+    "maxErrorSceneUnits": 0.34326188933929913,
+    "scale": 21.012695035023306,
+    "rotationMatrix": [
+      [0.97358102, -0.14812615, 0.17377754],
+      [0.15241737, 0.98824886, -0.01153866],
+      [-0.17002627, 0.03772053, 0.98471733]
+    ],
+    "translation": [-4.10316382, 1.92229385, -6.70837266]
+  },
   "assets": {
     "visual": {
       "id": "bedroom_4_anysplat_20260709_044525_gaussians_ply",

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-20260711";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-align-20260711";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 const COLLIDER_MODES = ["wire", "solid", "hidden"];
 const COLLIDER_LABELS = {
@@ -38,6 +38,12 @@ camera.position.set(24, 16, 30);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
+controls.dampingFactor = 0.055;
+controls.enablePan = true;
+controls.screenSpacePanning = true;
+controls.rotateSpeed = 0.92;
+controls.zoomSpeed = 1.35;
+controls.panSpeed = 0.95;
 controls.minDistance = 0.5;
 controls.maxDistance = 140;
 controls.maxPolarAngle = Math.PI;
@@ -93,8 +99,16 @@ const state = {
   colliderFaces: 0,
   colliderSha256: "",
   colliderSourcePath: "",
+  transformSource: "pending",
   transformScale: 1,
+  transformTranslation: { x: 0, y: 0, z: 0 },
   transformOffset: { x: 0, y: 0, z: 0 },
+  transformRotationMatrix: [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ],
+  transformRmseSceneUnits: null,
   lastHit: "none",
   lastHitInfo: null,
   error: "",
@@ -151,7 +165,95 @@ function semanticColor(objectId) {
   return new THREE.Color(palette[id % palette.length]);
 }
 
-function calculateVisualToColliderTransform(visualBox, colliderBox) {
+function identityRotationRows() {
+  return [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+}
+
+function rotationRowsToMatrix4(rows) {
+  return new THREE.Matrix4().set(
+    rows[0][0], rows[0][1], rows[0][2], 0,
+    rows[1][0], rows[1][1], rows[1][2], 0,
+    rows[2][0], rows[2][1], rows[2][2], 0,
+    0, 0, 0, 1
+  );
+}
+
+function normalizeRotationRows(rows) {
+  if (!Array.isArray(rows) || rows.length !== 3) return identityRotationRows();
+  const parsed = rows.map((row) => Array.isArray(row) ? row.map(Number) : []);
+  if (parsed.some((row) => row.length !== 3 || row.some((value) => !Number.isFinite(value)))) {
+    return identityRotationRows();
+  }
+  return parsed;
+}
+
+function vectorFromArray(values, fallback = [0, 0, 0]) {
+  const source = Array.isArray(values) && values.length >= 3 ? values : fallback;
+  return new THREE.Vector3(Number(source[0]) || 0, Number(source[1]) || 0, Number(source[2]) || 0);
+}
+
+function roundedVector(vector) {
+  return {
+    x: Number(vector.x.toFixed(6)),
+    y: Number(vector.y.toFixed(6)),
+    z: Number(vector.z.toFixed(6)),
+  };
+}
+
+function roundedRotationRows(rows) {
+  return rows.map((row) => row.map((value) => Number(Number(value).toFixed(8))));
+}
+
+function currentVisualTransform() {
+  return {
+    source: state.transformSource,
+    scale: state.transformScale,
+    rotationMatrix: state.transformRotationMatrix,
+    translation: [
+      state.transformTranslation.x,
+      state.transformTranslation.y,
+      state.transformTranslation.z,
+    ],
+    rmseSceneUnits: state.transformRmseSceneUnits,
+  };
+}
+
+function rotationRowsFromEulerDeg(degrees) {
+  const euler = new THREE.Euler(
+    THREE.MathUtils.degToRad(Number(degrees?.[0]) || 0),
+    THREE.MathUtils.degToRad(Number(degrees?.[1]) || 0),
+    THREE.MathUtils.degToRad(Number(degrees?.[2]) || 0),
+    "XYZ"
+  );
+  const elements = new THREE.Matrix4().makeRotationFromEuler(euler).elements;
+  return [
+    [elements[0], elements[4], elements[8]],
+    [elements[1], elements[5], elements[9]],
+    [elements[2], elements[6], elements[10]],
+  ];
+}
+
+function calculateVisualToColliderTransform(visualBox, colliderBox, alignmentMeta = null) {
+  if (alignmentMeta?.rotationMatrix && Number.isFinite(Number(alignmentMeta.scale))) {
+    const rotationMatrix = normalizeRotationRows(alignmentMeta.rotationMatrix);
+    const translation = vectorFromArray(alignmentMeta.translation);
+    return {
+      source: alignmentMeta.id || alignmentMeta.method || "manifest_alignment",
+      scale: Number(alignmentMeta.scale),
+      rotationMatrix,
+      translation,
+      rmseSceneUnits: Number.isFinite(Number(alignmentMeta.rmseSceneUnits))
+        ? Number(alignmentMeta.rmseSceneUnits)
+        : null,
+      maxErrorSceneUnits: Number.isFinite(Number(alignmentMeta.maxErrorSceneUnits))
+        ? Number(alignmentMeta.maxErrorSceneUnits)
+        : null,
+    };
+  }
   const visualSize = boxSize(visualBox);
   const colliderSize = boxSize(colliderBox);
   const visualMax = Math.max(visualSize.x, visualSize.y, visualSize.z, 1e-6);
@@ -159,8 +261,66 @@ function calculateVisualToColliderTransform(visualBox, colliderBox) {
   const scale = colliderMax / visualMax;
   const visualCenter = boxCenter(visualBox);
   const colliderCenter = boxCenter(colliderBox);
-  const offset = colliderCenter.clone().sub(visualCenter.clone().multiplyScalar(scale));
-  return { scale, offset };
+  const translation = colliderCenter.clone().sub(visualCenter.clone().multiplyScalar(scale));
+  return {
+    source: "bbox_center_max_extent_fallback",
+    scale,
+    rotationMatrix: identityRotationRows(),
+    translation,
+    rmseSceneUnits: null,
+    maxErrorSceneUnits: null,
+  };
+}
+
+function applyVisualTransform(transform, { announce = false } = {}) {
+  if (!visualSplat) return;
+  const rotationMatrix = normalizeRotationRows(transform.rotationMatrix);
+  const rotation4 = rotationRowsToMatrix4(rotationMatrix);
+  visualSplat.scale.setScalar(transform.scale);
+  visualSplat.quaternion.setFromRotationMatrix(rotation4);
+  visualSplat.position.copy(transform.translation);
+  visualSplat.updateMatrixWorld(true);
+
+  state.transformSource = transform.source || "manual";
+  state.transformScale = Number(transform.scale.toFixed(8));
+  state.transformTranslation = roundedVector(transform.translation);
+  state.transformOffset = state.transformTranslation;
+  state.transformRotationMatrix = roundedRotationRows(rotationMatrix);
+  state.transformRmseSceneUnits = Number.isFinite(transform.rmseSceneUnits)
+    ? Number(transform.rmseSceneUnits.toFixed(6))
+    : null;
+  updateHud();
+  if (announce) showToast(`Visual alignment: ${state.transformSource}`);
+}
+
+function buildManualVisualTransform(patch = {}) {
+  const rotationMatrix = patch.rotationMatrix
+    ? normalizeRotationRows(patch.rotationMatrix)
+    : (patch.rotationEulerDeg ? rotationRowsFromEulerDeg(patch.rotationEulerDeg) : normalizeRotationRows(state.transformRotationMatrix));
+
+  return {
+    source: patch.source || "manual_viewer_alignment",
+    scale: Number.isFinite(Number(patch.scale)) ? Number(patch.scale) : state.transformScale,
+    rotationMatrix,
+    translation: patch.translation
+      ? vectorFromArray(patch.translation)
+      : new THREE.Vector3(
+        state.transformTranslation.x,
+        state.transformTranslation.y,
+        state.transformTranslation.z
+      ),
+    rmseSceneUnits: null,
+    maxErrorSceneUnits: null,
+  };
+}
+
+function exposeDebugApi() {
+  window.__setVisualAlignment = (patch = {}) => {
+    const transform = buildManualVisualTransform(patch);
+    applyVisualTransform(transform, { announce: true });
+    return syncDebugState();
+  };
+  window.__getVisualAlignment = () => currentVisualTransform();
 }
 
 function syncDebugState() {
@@ -184,6 +344,9 @@ function updateHud() {
   modeChip.textContent = [
     state.visualReady ? "AnySplat Gaussian PLY visual ready" : "loading visual PLY",
     state.colliderReady ? "semantic PLY collider ready" : "loading collider PLY",
+    state.transformSource === "pending"
+      ? "alignment pending"
+      : `${state.transformSource}${state.transformRmseSceneUnits ? ` rmse ${state.transformRmseSceneUnits}` : ""}`,
     `${COLLIDER_LABELS[state.colliderRenderMode]} collider`,
     `${state.cameraMode} camera`,
     "raycast ignores visual splats",
@@ -234,12 +397,14 @@ async function loadVisualSplat(transform) {
   state.visualCount = asset.vertexCount || 0;
   state.visualSha256 = asset.sha256 || "";
   state.visualSourcePath = asset.sourcePath || "";
+  state.transformSource = transform.source;
   state.transformScale = transform.scale;
-  state.transformOffset = {
-    x: Number(transform.offset.x.toFixed(6)),
-    y: Number(transform.offset.y.toFixed(6)),
-    z: Number(transform.offset.z.toFixed(6)),
-  };
+  state.transformTranslation = roundedVector(transform.translation);
+  state.transformOffset = state.transformTranslation;
+  state.transformRotationMatrix = roundedRotationRows(transform.rotationMatrix);
+  state.transformRmseSceneUnits = Number.isFinite(transform.rmseSceneUnits)
+    ? Number(transform.rmseSceneUnits.toFixed(6))
+    : null;
 
   visualSplat = new SplatMesh({
     fileBytes: bytes,
@@ -255,12 +420,11 @@ async function loadVisualSplat(transform) {
   });
   visualSplat.name = "AnySplat bedroom_4 Gaussian visual proxy";
   visualSplat.raycast = () => {};
-  visualSplat.scale.setScalar(transform.scale);
-  visualSplat.position.copy(transform.offset);
   visualLayer.add(visualSplat);
+  applyVisualTransform(transform);
 
   await visualSplat.initialized;
-  visualSplat.updateMatrixWorld(true);
+  applyVisualTransform(transform);
   state.visualReady = true;
   showToast("AnySplat Gaussian PLY visual layer loaded.");
   updateHud();
@@ -512,6 +676,7 @@ function inspectColliderAt(clientX, clientY, { focus = true } = {}) {
 
 function onPointerDown(event) {
   if (event.button !== 0) return;
+  canvas.focus({ preventScroll: true });
   pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
 }
 
@@ -521,7 +686,7 @@ function onPointerUp(event) {
   const dy = event.clientY - pointerDown.y;
   const elapsed = performance.now() - pointerDown.time;
   pointerDown = null;
-  if (Math.hypot(dx, dy) > 6 || elapsed > 480) return;
+  if (Math.hypot(dx, dy) > 5 || elapsed > 360) return;
   inspectColliderAt(event.clientX, event.clientY);
 }
 
@@ -612,6 +777,7 @@ function bindEvents() {
     showToast(state.cameraMode === "fly" ? "Fly camera: drag to look, WASD move, Q/E down/up." : "Orbit camera enabled.");
   });
   document.querySelector("#resetView").addEventListener("click", () => frameCameraToBounds(colliderBounds, true));
+  exposeDebugApi();
 }
 
 async function init() {
@@ -622,7 +788,7 @@ async function init() {
     await loadManifest();
     const visualBox = boxFromMeta(manifest.assets.visual);
     const colliderBox = boxFromMeta(manifest.assets.collider);
-    const transform = calculateVisualToColliderTransform(visualBox, colliderBox);
+    const transform = calculateVisualToColliderTransform(visualBox, colliderBox, manifest.alignment);
     await loadColliderMesh();
     frameCameraToBounds(colliderBounds);
     await loadVisualSplat(transform);

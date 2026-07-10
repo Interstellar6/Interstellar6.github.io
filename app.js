@@ -51,6 +51,7 @@
     accountPopover: $("accountPopover"),
     themeToggle: $("themeToggle"),
     themeLabel: $("themeLabel"),
+    projectDemoLink: $("projectDemoLink"),
     railToggle: $("railToggle"),
     railResizer: $("railResizer"),
     directoryContentMode: $("directoryContentMode"),
@@ -578,6 +579,10 @@
     els.projectView.hidden = view !== "project";
     els.loginView.hidden = view !== "login";
     els.adminView.hidden = view !== "admin";
+    if (els.projectDemoLink) {
+      const showDemoLink = view === "project" && project?.slug === "video2mesh" && accessState.allowed;
+      els.projectDemoLink.hidden = !showDemoLink;
+    }
   }
 
   function renderDirectoryTree() {
