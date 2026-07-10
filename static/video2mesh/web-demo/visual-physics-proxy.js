@@ -7,6 +7,14 @@ const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v4";
 const ALIGNMENT_NUDGE_STEP = 0.35;
 const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
+const CAMERA_CONTROL_VERSION = "supersplat-smooth-20260711";
+const CAMERA_ORBIT_SENSITIVITY = 0.0054;
+const CAMERA_TRACKPAD_ORBIT_SENSITIVITY = 0.0044;
+const CAMERA_PAN_SENSITIVITY = 0.00145;
+const CAMERA_WHEEL_ZOOM_SENSITIVITY = 0.00165;
+const CAMERA_DRAG_ZOOM_SENSITIVITY = 0.012;
+const CAMERA_MIN_POLAR = 0.035;
+const CAMERA_MAX_POLAR = Math.PI - 0.035;
 const CAMERA_PRESETS = ["front", "back", "left", "right", "top", "robot"];
 const CAMERA_PRESET_LABELS = {
   front: "Interior front",
@@ -62,14 +70,16 @@ const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerH
 camera.position.set(24, 16, 30);
 
 const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.055;
-controls.enablePan = true;
+controls.enabled = false;
+controls.enableDamping = false;
+controls.dampingFactor = 0;
+controls.enablePan = false;
 controls.screenSpacePanning = true;
 controls.enableZoom = false;
-controls.rotateSpeed = 0.92;
-controls.zoomSpeed = 1.35;
-controls.panSpeed = 0.95;
+controls.enableRotate = false;
+controls.rotateSpeed = 0;
+controls.zoomSpeed = 0;
+controls.panSpeed = 0;
 controls.minDistance = 0.08;
 controls.maxDistance = 220;
 controls.maxPolarAngle = Math.PI;
@@ -117,6 +127,7 @@ const state = {
   semanticColor: true,
   cameraMode: "orbit",
   cameraPreset: "front",
+  cameraControlVersion: CAMERA_CONTROL_VERSION,
   qualityMode: "balanced",
   targetPixelRatio: Number(initialPixelRatio.toFixed(2)),
   actualPixelRatio: Number(initialPixelRatio.toFixed(2)),
@@ -190,6 +201,17 @@ let robotFloorYEstimate = null;
 let lastFpsUpdate = 0;
 let frameCount = 0;
 let gizmoDrag = null;
+let canvasDrag = null;
+
+const smoothCamera = {
+  initialized: false,
+  target: new THREE.Vector3(),
+  desiredTarget: new THREE.Vector3(),
+  spherical: new THREE.Spherical(1, Math.PI / 2, 0),
+  desiredSpherical: new THREE.Spherical(1, Math.PI / 2, 0),
+  lastWheelTime: -Infinity,
+  burstIsWheel: true,
+};
 
 function showToast(message) {
   toast.textContent = message;
@@ -674,6 +696,131 @@ function exposeDebugApi() {
     resetManualAlignment();
     return syncDebugState();
   };
+}
+
+function clampCameraSpherical(spherical) {
+  spherical.radius = THREE.MathUtils.clamp(
+    spherical.radius,
+    Math.max(0.02, controls.minDistance || 0.02),
+    Math.max(0.08, controls.maxDistance || 220)
+  );
+  spherical.phi = THREE.MathUtils.clamp(spherical.phi, CAMERA_MIN_POLAR, CAMERA_MAX_POLAR);
+  return spherical;
+}
+
+function sphericalFromCamera(eye = camera.position, target = controls.target) {
+  return clampCameraSpherical(new THREE.Spherical().setFromVector3(eye.clone().sub(target)));
+}
+
+function syncSmoothCameraFromCurrent({ immediate = true } = {}) {
+  const spherical = sphericalFromCamera(camera.position, controls.target);
+  smoothCamera.desiredTarget.copy(controls.target);
+  smoothCamera.desiredSpherical.copy(spherical);
+  if (immediate || !smoothCamera.initialized) {
+    smoothCamera.target.copy(controls.target);
+    smoothCamera.spherical.copy(spherical);
+  }
+  smoothCamera.initialized = true;
+}
+
+function applySmoothCameraPose() {
+  clampCameraSpherical(smoothCamera.spherical);
+  const offset = new THREE.Vector3().setFromSpherical(smoothCamera.spherical);
+  camera.position.copy(smoothCamera.target).add(offset);
+  controls.target.copy(smoothCamera.target);
+  camera.lookAt(smoothCamera.target);
+}
+
+function setSmoothCameraPose(eye, target, { immediate = false } = {}) {
+  const shouldSnap = immediate || !smoothCamera.initialized;
+  smoothCamera.desiredTarget.copy(target);
+  smoothCamera.desiredSpherical.copy(sphericalFromCamera(eye, target));
+  smoothCamera.initialized = true;
+  if (shouldSnap) {
+    smoothCamera.target.copy(smoothCamera.desiredTarget);
+    smoothCamera.spherical.copy(smoothCamera.desiredSpherical);
+    applySmoothCameraPose();
+  }
+}
+
+function setSmoothCameraTarget(target, { preserveOffset = true, immediate = false } = {}) {
+  if (!smoothCamera.initialized) syncSmoothCameraFromCurrent();
+  smoothCamera.desiredTarget.copy(target);
+  if (!preserveOffset) smoothCamera.desiredSpherical.copy(sphericalFromCamera(camera.position, target));
+  if (immediate) {
+    smoothCamera.target.copy(smoothCamera.desiredTarget);
+    applySmoothCameraPose();
+  }
+}
+
+function orbitCameraAroundTarget({ theta = 0, phi = 0, scale = 1, announce = false } = {}) {
+  if (state.cameraMode !== "orbit") state.cameraMode = "orbit";
+  if (!smoothCamera.initialized) syncSmoothCameraFromCurrent();
+  smoothCamera.desiredSpherical.theta += theta;
+  smoothCamera.desiredSpherical.phi += phi;
+  smoothCamera.desiredSpherical.radius *= scale;
+  clampCameraSpherical(smoothCamera.desiredSpherical);
+  state.robotFollowCamera = false;
+  state.cameraPreset = "custom";
+  if (announce) setLayerVisibility();
+  if (announce) showToast("Camera adjusted around the current indoor target.");
+}
+
+function panCameraTarget(deltaX, deltaY, { announce = false } = {}) {
+  if (!smoothCamera.initialized) syncSmoothCameraFromCurrent();
+  const distance = Math.max(smoothCamera.desiredSpherical.radius, 0.1);
+  const panScale = distance * CAMERA_PAN_SENSITIVITY;
+  const eye = smoothCamera.desiredTarget.clone().add(new THREE.Vector3().setFromSpherical(smoothCamera.desiredSpherical));
+  const forward = smoothCamera.desiredTarget.clone().sub(eye).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  const move = new THREE.Vector3()
+    .addScaledVector(right, -deltaX * panScale)
+    .addScaledVector(up, deltaY * panScale);
+  smoothCamera.desiredTarget.add(move);
+  smoothCamera.target.add(move.multiplyScalar(0.22));
+  state.robotFollowCamera = false;
+  state.cameraMode = "orbit";
+  state.cameraPreset = "custom";
+  if (announce) setLayerVisibility();
+  if (announce) showToast("Camera target panned.");
+}
+
+function zoomCameraByWheel(deltaY, sensitivity = CAMERA_WHEEL_ZOOM_SENSITIVITY) {
+  if (!smoothCamera.initialized) syncSmoothCameraFromCurrent();
+  const scale = Math.exp(THREE.MathUtils.clamp(deltaY * sensitivity, -0.7, 0.7));
+  orbitCameraAroundTarget({ scale });
+}
+
+function classifyWheelInput(event) {
+  if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return true;
+  const rawEvent = event;
+  if (typeof rawEvent.wheelDeltaY === "number" && rawEvent.wheelDeltaY !== 0) {
+    return rawEvent.wheelDeltaY % 120 === 0;
+  }
+  if (typeof rawEvent.wheelDeltaX === "number" && rawEvent.wheelDeltaX !== 0) {
+    return rawEvent.wheelDeltaX % 120 === 0;
+  }
+  if (event.deltaX !== 0 && event.deltaY !== 0) return false;
+  return Number.isInteger(event.deltaX) && Number.isInteger(event.deltaY);
+}
+
+function updateSmoothCamera(dt) {
+  if (state.cameraMode !== "orbit") return;
+  if (!smoothCamera.initialized) syncSmoothCameraFromCurrent();
+  const targetAlpha = 1 - Math.exp(-Math.max(dt, 0.001) * 16);
+  const angleAlpha = 1 - Math.exp(-Math.max(dt, 0.001) * 18);
+  const radiusAlpha = 1 - Math.exp(-Math.max(dt, 0.001) * 20);
+
+  smoothCamera.target.lerp(smoothCamera.desiredTarget, targetAlpha);
+  const thetaDelta = Math.atan2(
+    Math.sin(smoothCamera.desiredSpherical.theta - smoothCamera.spherical.theta),
+    Math.cos(smoothCamera.desiredSpherical.theta - smoothCamera.spherical.theta)
+  );
+  smoothCamera.spherical.theta += thetaDelta * angleAlpha;
+  smoothCamera.spherical.phi += (smoothCamera.desiredSpherical.phi - smoothCamera.spherical.phi) * angleAlpha;
+  smoothCamera.spherical.radius += (smoothCamera.desiredSpherical.radius - smoothCamera.spherical.radius) * radiusAlpha;
+  applySmoothCameraPose();
 }
 
 function syncCameraState() {
@@ -1412,10 +1559,7 @@ function updateRobotFollowCamera(dt, immediate = false) {
     Math.cos(yaw + Math.PI) * 4.8
   );
   const desiredCamera = target.clone().add(followOffset);
-  const alpha = immediate ? 1 : 1 - Math.pow(0.002, Math.max(dt, 0.001));
-  controls.target.lerp(target, alpha);
-  camera.position.lerp(desiredCamera, alpha * 0.68);
-  controls.update();
+  setSmoothCameraPose(desiredCamera, target, { immediate });
   state.cameraPreset = "robotFollow";
 }
 
@@ -1478,15 +1622,12 @@ function setCameraOrbitView(preset = "front", { announce = false } = {}) {
   state.cameraMode = "orbit";
   state.cameraPreset = presetId;
   keyState.clear();
-  controls.enabled = true;
   controls.minDistance = 0.08;
   controls.maxDistance = Math.max(16, Math.min(48, roomMax * 1.35));
-  controls.target.copy(target);
-  camera.position.copy(eye);
   camera.near = 0.02;
   camera.far = Math.max(220, roomMax * 12);
   camera.updateProjectionMatrix();
-  controls.update();
+  setSmoothCameraPose(eye, target, { immediate: false });
   setLayerVisibility();
   if (announce) showToast(`Camera preset: ${CAMERA_PRESET_LABELS[presetId]}.`);
 }
@@ -1494,50 +1635,6 @@ function setCameraOrbitView(preset = "front", { announce = false } = {}) {
 function frameCameraToInterior({ announce = false } = {}) {
   const nextPreset = announce ? nextValue(CAMERA_PRESETS, state.cameraPreset) : state.cameraPreset;
   setCameraOrbitView(nextPreset || "front", { announce });
-}
-
-function orbitCameraAroundTarget({ theta = 0, phi = 0, scale = 1, announce = false } = {}) {
-  if (state.cameraMode !== "orbit") {
-    state.cameraMode = "orbit";
-    controls.enabled = true;
-  }
-  const offset = camera.position.clone().sub(controls.target);
-  const spherical = new THREE.Spherical().setFromVector3(offset);
-  spherical.theta += theta;
-  spherical.phi = THREE.MathUtils.clamp(spherical.phi + phi, 0.06, Math.PI - 0.06);
-  spherical.radius = THREE.MathUtils.clamp(spherical.radius * scale, controls.minDistance, controls.maxDistance);
-  camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(spherical));
-  camera.updateProjectionMatrix();
-  controls.update();
-  state.robotFollowCamera = false;
-  state.cameraPreset = "custom";
-  setLayerVisibility();
-  if (announce) showToast("Camera adjusted around the current indoor target.");
-}
-
-function panCameraTarget(deltaX, deltaY, { announce = false } = {}) {
-  const distance = Math.max(camera.position.distanceTo(controls.target), 0.1);
-  const panScale = distance * 0.00155;
-  const forward = new THREE.Vector3();
-  camera.getWorldDirection(forward);
-  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
-  const move = new THREE.Vector3()
-    .addScaledVector(right, -deltaX * panScale)
-    .addScaledVector(up, deltaY * panScale);
-  camera.position.add(move);
-  controls.target.add(move);
-  controls.update();
-  state.robotFollowCamera = false;
-  state.cameraMode = "orbit";
-  state.cameraPreset = "custom";
-  setLayerVisibility();
-  if (announce) showToast("Camera target panned.");
-}
-
-function zoomCameraByWheel(deltaY) {
-  const scale = deltaY > 0 ? 1.12 : 0.88;
-  orbitCameraAroundTarget({ scale });
 }
 
 function updateAdaptiveQuality(fps) {
@@ -1559,13 +1656,12 @@ function frameCameraToBounds(bounds, force = false) {
   const size = boxSize(bounds);
   const radius = Math.max(size.x, size.y, size.z, 1);
   const distance = radius * 0.95;
-  controls.target.copy(center);
-  camera.position.copy(center).add(new THREE.Vector3(distance * 0.72, distance * 0.44, distance * 0.82));
+  const eye = center.clone().add(new THREE.Vector3(distance * 0.72, distance * 0.44, distance * 0.82));
   camera.near = Math.max(0.02, radius / 1200);
   camera.far = Math.max(220, radius * 12);
   camera.updateProjectionMatrix();
   controls.maxDistance = Math.max(80, radius * 5);
-  controls.update();
+  setSmoothCameraPose(eye, center, { immediate: false });
   state.robotFollowCamera = false;
   state.cameraMode = "orbit";
   state.cameraPreset = "overview";
@@ -1651,10 +1747,7 @@ function inspectColliderAt(clientX, clientY, { focus = true, spawnRobot = false 
   state.lastHit = `${state.lastHitInfo.label}:face-${state.lastHitInfo.faceIndex}`;
   markHit(hit.point, normal);
   if (focus && state.cameraMode === "orbit") {
-    const offset = camera.position.clone().sub(controls.target);
-    controls.target.copy(hit.point);
-    camera.position.copy(hit.point).add(offset);
-    controls.update();
+    setSmoothCameraTarget(hit.point, { preserveOffset: true, immediate: false });
   }
   if (spawnRobot) {
     respawnRobotAt(hit.point, "shift-click");
@@ -1668,12 +1761,50 @@ function inspectColliderAt(clientX, clientY, { focus = true, spawnRobot = false 
 }
 
 function onPointerDown(event) {
-  if (event.button !== 0) return;
+  if (![0, 1, 2].includes(event.button)) return;
   canvas.focus({ preventScroll: true });
-  pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
+  if (state.cameraMode === "orbit") {
+    event.preventDefault();
+    state.robotFollowCamera = false;
+    canvasDrag = {
+      pointerId: event.pointerId,
+      button: event.button,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      time: performance.now(),
+      moved: false,
+    };
+    pointerDown = canvasDrag;
+    canvas.setPointerCapture?.(event.pointerId);
+    setLayerVisibility();
+    return;
+  }
+  if (event.button !== 0) return;
+  pointerDown = { x: event.clientX, y: event.clientY, time: performance.now(), moved: false };
 }
 
 function onPointerUp(event) {
+  if (state.cameraMode === "orbit" && canvasDrag && event.pointerId === canvasDrag.pointerId) {
+    event.preventDefault();
+    const dx = event.clientX - canvasDrag.startX;
+    const dy = event.clientY - canvasDrag.startY;
+    const elapsed = performance.now() - canvasDrag.time;
+    const moved = canvasDrag.moved || Math.hypot(dx, dy) > 5;
+    try {
+      canvas.releasePointerCapture?.(canvasDrag.pointerId);
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+    canvasDrag = null;
+    pointerDown = null;
+    if (!moved && elapsed <= 380 && event.button === 0) {
+      inspectColliderAt(event.clientX, event.clientY, { spawnRobot: event.shiftKey });
+    }
+    return;
+  }
+
   if (event.button !== 0 || !pointerDown) return;
   const dx = event.clientX - pointerDown.x;
   const dy = event.clientY - pointerDown.y;
@@ -1681,6 +1812,18 @@ function onPointerUp(event) {
   pointerDown = null;
   if (Math.hypot(dx, dy) > 5 || elapsed > 360) return;
   inspectColliderAt(event.clientX, event.clientY, { spawnRobot: event.shiftKey });
+}
+
+function endCanvasDrag(event) {
+  if (!canvasDrag) return;
+  try {
+    canvas.releasePointerCapture?.(canvasDrag.pointerId);
+  } catch {
+    // Pointer capture may already be released by the browser.
+  }
+  canvasDrag = null;
+  pointerDown = null;
+  event?.preventDefault?.();
 }
 
 function beginViewportGizmoDrag(event, mode) {
@@ -1712,8 +1855,8 @@ function updateViewportGizmoDrag(event) {
   gizmoDrag.lastY = event.clientY;
   if (gizmoDrag.mode === "rotate") {
     orbitCameraAroundTarget({
-      theta: -dx * 0.008,
-      phi: -dy * 0.008,
+      theta: -dx * CAMERA_ORBIT_SENSITIVITY,
+      phi: -dy * CAMERA_ORBIT_SENSITIVITY,
     });
   } else {
     panCameraTarget(dx, dy);
@@ -1736,9 +1879,27 @@ function endViewportGizmoDrag(event) {
 }
 
 function onCanvasWheel(event) {
-  if (event.ctrlKey || event.metaKey) return;
+  if (state.cameraMode !== "orbit") return;
   event.preventDefault();
-  zoomCameraByWheel(event.deltaY);
+
+  const now = performance.now();
+  if (now - smoothCamera.lastWheelTime > 80) {
+    smoothCamera.burstIsWheel = classifyWheelInput(event);
+  }
+  smoothCamera.lastWheelTime = now;
+
+  const wheelDelta = event.shiftKey && event.deltaY === 0 ? event.deltaX : event.deltaY;
+  const verticalDominant = Math.abs(event.deltaY) >= Math.abs(event.deltaX);
+  if (event.shiftKey) {
+    panCameraTarget(event.deltaX, event.deltaY);
+  } else if (verticalDominant || smoothCamera.burstIsWheel || event.ctrlKey || event.metaKey) {
+    zoomCameraByWheel(wheelDelta);
+  } else {
+    orbitCameraAroundTarget({
+      theta: -event.deltaX * CAMERA_TRACKPAD_ORBIT_SENSITIVITY,
+      phi: -event.deltaY * CAMERA_TRACKPAD_ORBIT_SENSITIVITY,
+    });
+  }
 }
 
 function updateFlyCamera(dt) {
@@ -1762,6 +1923,31 @@ function updateFlyCamera(dt) {
 }
 
 function onPointerMove(event) {
+  if (state.cameraMode === "orbit" && canvasDrag && event.pointerId === canvasDrag.pointerId) {
+    event.preventDefault();
+    const dx = event.clientX - canvasDrag.lastX;
+    const dy = event.clientY - canvasDrag.lastY;
+    if (dx === 0 && dy === 0) return;
+    canvasDrag.lastX = event.clientX;
+    canvasDrag.lastY = event.clientY;
+    if (Math.hypot(event.clientX - canvasDrag.startX, event.clientY - canvasDrag.startY) > 4) {
+      canvasDrag.moved = true;
+    }
+
+    const wantsZoom = event.ctrlKey || event.metaKey || canvasDrag.button === 1;
+    const wantsPan = event.shiftKey || event.button === 2 || canvasDrag.button === 2;
+    if (wantsZoom) {
+      zoomCameraByWheel(-dy, CAMERA_DRAG_ZOOM_SENSITIVITY);
+    } else if (wantsPan) {
+      panCameraTarget(dx, dy);
+    } else {
+      orbitCameraAroundTarget({
+        theta: -dx * CAMERA_ORBIT_SENSITIVITY,
+        phi: -dy * CAMERA_ORBIT_SENSITIVITY,
+      });
+    }
+    return;
+  }
   if (state.cameraMode !== "fly" || event.buttons !== 1) return;
   const direction = new THREE.Vector3();
   camera.getWorldDirection(direction);
@@ -1814,7 +2000,7 @@ function setLayerVisibility() {
   document.querySelector("#toggleRobotCollision").textContent = state.robotObstacleCollision ? "Collision On" : "Collision Off";
   document.querySelector("#toggleQuality").classList.toggle("is-active", state.qualityMode === "performance");
   document.querySelector("#toggleQuality").textContent = state.qualityMode === "performance" ? "Performance" : "Balanced";
-  controls.enabled = state.cameraMode === "orbit";
+  controls.enabled = false;
   robotLayer.visible = state.robotEnabled;
   if (robotGroup) robotGroup.visible = state.robotEnabled;
   applyColliderMode();
@@ -1839,7 +2025,10 @@ function bindEvents() {
   window.addEventListener("keyup", (event) => keyState.delete(event.code));
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointerup", onPointerUp);
+  canvas.addEventListener("pointercancel", endCanvasDrag);
+  canvas.addEventListener("lostpointercapture", endCanvasDrag);
   canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   canvas.addEventListener("wheel", onCanvasWheel, { passive: false });
   document.querySelectorAll("[data-viewport-gizmo]").forEach((button) => {
     button.addEventListener("pointerdown", (event) => beginViewportGizmoDrag(event, button.dataset.viewportGizmo));
@@ -1870,6 +2059,7 @@ function bindEvents() {
     state.cameraMode = state.cameraMode === "orbit" ? "fly" : "orbit";
     state.cameraPreset = state.cameraMode === "fly" ? "fly" : "custom";
     keyState.clear();
+    if (state.cameraMode === "orbit") syncSmoothCameraFromCurrent();
     setLayerVisibility();
     showToast(state.cameraMode === "fly"
       ? "Fly camera enabled. Turn Robot off if you want WASD to move the camera."
@@ -1984,7 +2174,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.04);
   updateFlyCamera(dt);
   updateRobot(dt);
-  if (state.cameraMode === "orbit") controls.update();
+  updateSmoothCamera(dt);
   sparkRenderer.render(scene, camera);
 
   frameCount += 1;
