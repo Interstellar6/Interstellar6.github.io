@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,19 @@ BUILD_DIR = ROOT / "_site"
 ASSETS_DIR = ROOT / "assets"
 STATIC_DIR = ROOT / "static"
 PROTECTED_DIR = BUILD_DIR / "_protected"
-ASSET_VERSION = datetime.now().strftime("%Y%m%d%H%M%S")
+
+
+def content_hash_version(paths: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in paths:
+        if not path.exists() or not path.is_file():
+            continue
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
+ASSET_VERSION = content_hash_version([ROOT / "styles.css", ROOT / "app.js", ROOT / "theme.js"])
 
 
 @dataclass
@@ -317,6 +329,31 @@ def git_last_modified_dates(repo: Path, docs_root: Path) -> dict[str, str]:
     return dates
 
 
+def normalize_explicit_date(value: Any) -> str:
+    if value is None:
+        return ""
+    raw = str(value).strip()
+    match = re.search(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}", raw)
+    if not match:
+        return ""
+    year, month, day = (part.zfill(2) for part in re.split(r"[-/.]", match.group(0)))
+    return f"{year}-{month}-{day}"
+
+
+def content_updated_date(meta: dict[str, Any], project_path: str, updated_dates: dict[str, str]) -> str:
+    explicit = (
+        normalize_explicit_date(meta.get("updated"))
+        or normalize_explicit_date(meta.get("last_updated"))
+        or normalize_explicit_date(meta.get("date"))
+    )
+    return updated_dates.get(project_path) or explicit
+
+
+def latest_content_date(values: list[str]) -> str:
+    cleaned = [value for value in values if value]
+    return max(cleaned) if cleaned else ""
+
+
 def load_doc(
     project: dict[str, Any],
     path: Path,
@@ -363,7 +400,7 @@ def load_doc(
             body = copy_local_assets(project, path, doc_id, body, route_dir / "assets", "assets")
     words = re.findall(r"[\w\u4e00-\u9fff]+", strip_markdown(body))
     directory = "" if relative.parent == Path(".") else str(relative.parent).replace("\\", "/")
-    updated = updated_dates.get(project_path) or datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d")
+    updated = content_updated_date(meta, project_path, updated_dates)
     return Doc(
         id=doc_id,
         title=title,
@@ -530,10 +567,12 @@ def build_project(project: dict[str, Any], site_config: dict[str, Any]) -> tuple
     project_public["doc_count"] = len(public_docs)
     project_public["updated"] = max((doc.updated for doc in public_docs), default="")
     project_public["overview_id"] = next((doc.id for doc in public_docs if doc.is_overview and not doc.directory), public_docs[0].id if public_docs else "")
+    content_updated_at = project_public["updated"]
     protected = is_protected(project)
     project_seed = shell_project(project_public) if protected else project_public
     payload = {
-        "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "generatedAt": content_updated_at,
+        "contentUpdatedAt": content_updated_at,
         "site": site_config,
         "project": project_seed,
         "docs": [doc_to_public_dict(doc, include_body=not protected) for doc in public_docs] if not protected else [],
@@ -546,6 +585,7 @@ def build_project(project: dict[str, Any], site_config: dict[str, Any]) -> tuple
         private_dir.mkdir(parents=True, exist_ok=True)
         private_payload = {
             "generatedAt": payload["generatedAt"],
+            "contentUpdatedAt": content_updated_at,
             "site": site_config,
             "project": project_public,
             "docs": [doc_to_public_dict(doc, include_body=True) for doc in public_docs],
@@ -567,8 +607,10 @@ def build_project_shell(project: dict[str, Any], site_config: dict[str, Any]) ->
     target.mkdir(parents=True, exist_ok=True)
     copy_shell_files(target)
     seed = shell_project(project)
+    content_updated_at = str(seed.get("updated") or "")
     payload = {
-        "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "generatedAt": content_updated_at,
+        "contentUpdatedAt": content_updated_at,
         "site": site_config,
         "project": seed,
         "docs": [],
@@ -612,8 +654,10 @@ def build_home(site_config: dict[str, Any], summaries: list[dict[str, Any]]) -> 
     home = BUILD_DIR / "home"
     home.mkdir(parents=True, exist_ok=True)
     copy_shell_files(home)
+    content_updated_at = latest_content_date([str(summary.get("updated") or "") for summary in summaries])
     payload = {
-        "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "generatedAt": content_updated_at,
+        "contentUpdatedAt": content_updated_at,
         "site": site_config,
         "projects": summaries,
     }
@@ -638,12 +682,14 @@ def write_project_route_summaries(project_payloads: list[dict[str, Any]], summar
 
 
 def build_static_routes(site_config: dict[str, Any], summaries: list[dict[str, Any]]) -> None:
+    content_updated_at = latest_content_date([str(summary.get("updated") or "") for summary in summaries])
     for route in ("login", "admin"):
         target = BUILD_DIR / route
         target.mkdir(parents=True, exist_ok=True)
         copy_shell_files(target)
         write_jsonp(target / "site-data.js", "RELUMEOW_DATA", {
-            "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "generatedAt": content_updated_at,
+            "contentUpdatedAt": content_updated_at,
             "site": site_config,
             "projects": summaries,
         })
