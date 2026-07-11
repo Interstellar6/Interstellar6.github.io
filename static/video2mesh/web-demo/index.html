@@ -17,7 +17,7 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-gizmo-20260711" />
+    <link rel="stylesheet" href="./styles.css?v=local-bedroom4-anysplat-semanticmesh-backface-20260712" />
   </head>
   <body>
     <canvas id="sceneCanvas" tabindex="0" aria-label="AnySplat 3DGS visual layer with semantic mesh collider proxy"></canvas>
@@ -49,7 +49,7 @@
       <div class="panel status-card">
         <h1>视觉代理 3DGS + 碰撞代理 Mesh</h1>
         <p>
-          视觉层加载 bedroom_4 AnySplat GraphDECO Gaussian PLY，只负责渲染；碰撞层加载 semantic debug mesh PLY，负责点击射线、face 语义和后续物理代理。
+          视觉层加载 bedroom_4 AnySplat GraphDECO Gaussian PLY，只负责渲染；碰撞层加载 semantic debug mesh PLY，负责点击射线、face 语义和后续物理代理。首屏将点云与 mesh 同步翻到背面呈现。
         </p>
         <div class="metrics">
           <div class="metric"><strong id="visualMetric">loading</strong><span>visual splats</span></div>
@@ -119,12 +119,12 @@
           <span><i class="swatch visual"></i> AnySplat Gaussian PLY：Spark 3DGS renderer，关闭视觉层 raycast</span>
           <span><i class="swatch mesh"></i> semantic mesh PLY：Mesh collider proxy，保留 object_id / probability / source_face</span>
           <span><i class="swatch robot"></i> 小机器人：默认只依赖 mesh 地面探测，Shift+单击 collider 可重生</span>
-          <span><i class="swatch ray"></i> Align 控件是 viewer 级临时微调，真实配准仍以 manifest Sim(3) 为基线</span>
+          <span><i class="swatch ray"></i> 首屏背面呈现是 viewer 级同步 yaw 180°，真实配准仍以 manifest Sim(3) 为基线</span>
         </div>
       </div>
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-gizmo-20260711"></script>
+    <script type="module" src="./visual-physics-proxy.js?v=local-bedroom4-anysplat-semanticmesh-backface-20260712"></script>
   </body>
 </html>

@@ -2,12 +2,14 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-gizmo-20260711";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-20260712";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
-const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v4";
+const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
 const ALIGNMENT_NUDGE_STEP = 0.35;
 const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
 const ALIGNMENT_ROTATION_LIMIT_DEG = { x: 45, y: 90, z: 45 };
+const DEFAULT_SCENE_PRESENTATION_YAW_DEG = 180;
+const DEFAULT_SCENE_PRESENTATION_LABEL = "back-facing default";
 const CAMERA_CONTROL_VERSION = "supersplat-smooth-20260711";
 const CAMERA_ORBIT_SENSITIVITY = 0.0054;
 const CAMERA_TRACKPAD_ORBIT_SENSITIVITY = 0.0044;
@@ -156,6 +158,9 @@ const state = {
   transformTranslation: { x: 0, y: 0, z: 0 },
   transformOffset: { x: 0, y: 0, z: 0 },
   defaultViewerOffset: { x: 0, y: 0, z: 0 },
+  scenePresentation: DEFAULT_SCENE_PRESENTATION_LABEL,
+  scenePresentationYawDeg: DEFAULT_SCENE_PRESENTATION_YAW_DEG,
+  scenePresentationPivot: { x: 0, y: 0, z: 0 },
   manualAlignmentOffset: { x: 0, y: 0, z: 0 },
   manualAlignmentRotationDeg: { x: 0, y: 0, z: 0 },
   transformRotationMatrix: [
@@ -198,6 +203,7 @@ let visualMetaBox = null;
 let colliderMetaBox = null;
 let transformedVisualBounds = null;
 let baseVisualTransform = null;
+let scenePresentationPivot = null;
 let robotFloorYEstimate = null;
 let lastFpsUpdate = 0;
 let frameCount = 0;
@@ -412,6 +418,13 @@ function currentVisualTransform() {
       state.manualAlignmentRotationDeg.y,
       state.manualAlignmentRotationDeg.z,
     ],
+    scenePresentation: state.scenePresentation,
+    scenePresentationYawDeg: state.scenePresentationYawDeg,
+    scenePresentationPivot: [
+      state.scenePresentationPivot.x,
+      state.scenePresentationPivot.y,
+      state.scenePresentationPivot.z,
+    ],
     transformedVisualBounds: serializeBox(transformedVisualBounds),
     rmseSceneUnits: state.transformRmseSceneUnits,
   };
@@ -462,6 +475,41 @@ function calculateTransformedBox(box, transform) {
     new THREE.Vector3(transform.scale, transform.scale, transform.scale)
   );
   return box.clone().applyMatrix4(matrix);
+}
+
+function scenePresentationRotationMatrix4() {
+  return rotationRowsToMatrix4(rotationRowsFromEulerDeg([0, DEFAULT_SCENE_PRESENTATION_YAW_DEG, 0]));
+}
+
+function scenePresentationMatrix4(pivot = scenePresentationPivot) {
+  if (!pivot) return new THREE.Matrix4().identity();
+  const rotation = scenePresentationRotationMatrix4();
+  return new THREE.Matrix4()
+    .makeTranslation(pivot.x, pivot.y, pivot.z)
+    .multiply(rotation)
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+}
+
+function applyScenePresentationToGeometry(geometry, pivot) {
+  if (!geometry || !pivot) return;
+  geometry.applyMatrix4(scenePresentationMatrix4(pivot));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+}
+
+function applyScenePresentationToVisualTransform(transform) {
+  if (!transform || !scenePresentationPivot) return transform;
+  const presented = cloneTransform(transform);
+  const rotation = scenePresentationRotationMatrix4();
+  const baseRotation = rotationRowsToMatrix4(presented.rotationMatrix);
+  const combinedRotation = rotation.clone().multiply(baseRotation);
+  const pivotShift = scenePresentationPivot.clone()
+    .sub(scenePresentationPivot.clone().applyMatrix4(rotation));
+
+  presented.rotationMatrix = matrix4ToRotationRows(combinedRotation);
+  presented.translation = presented.translation.clone().applyMatrix4(rotation).add(pivotShift);
+  presented.source = `${presented.source}+${DEFAULT_SCENE_PRESENTATION_LABEL.replace(/\s+/g, "_")}`;
+  return presented;
 }
 
 function calculateVisualToColliderTransform(visualBox, colliderBox, alignmentMeta = null) {
@@ -562,7 +610,7 @@ function manualAlignmentIsActive() {
 
 function buildEffectiveVisualTransform() {
   if (!baseVisualTransform) return null;
-  const base = cloneTransform(baseVisualTransform);
+  const base = applyScenePresentationToVisualTransform(baseVisualTransform);
   const manualOffset = new THREE.Vector3(
     state.manualAlignmentOffset.x,
     state.manualAlignmentOffset.y,
@@ -863,6 +911,7 @@ function updateHud() {
     state.transformSource === "pending"
       ? "alignment pending"
       : `${state.transformSource}${state.transformRmseSceneUnits ? ` rmse ${state.transformRmseSceneUnits}` : ""}`,
+    `${state.scenePresentation} yaw ${state.scenePresentationYawDeg}°`,
     manualAlignmentIsActive()
       ? `manual offset ${state.manualAlignmentOffset.x.toFixed(2)}/${state.manualAlignmentOffset.y.toFixed(2)}/${state.manualAlignmentOffset.z.toFixed(2)} yaw ${state.manualAlignmentRotationDeg.y.toFixed(1)}`
       : (state.transformSource.includes("viewer_default") ? "bbox-center viewer correction" : "manifest alignment"),
@@ -1083,6 +1132,10 @@ async function loadColliderMesh() {
 
   const text = new TextDecoder().decode(bytes);
   const parsed = parseSemanticMeshPly(text);
+  const rawColliderBounds = parsed.geometry.boundingBox.clone();
+  scenePresentationPivot = boxCenter(colliderMetaBox || rawColliderBounds);
+  state.scenePresentationPivot = roundedVector(scenePresentationPivot);
+  applyScenePresentationToGeometry(parsed.geometry, scenePresentationPivot);
   colliderFaceSemantics = parsed.faceSemantics;
   colliderBounds = parsed.geometry.boundingBox.clone();
   robotFloorYEstimate = estimateMainWalkableFloorY(parsed.geometry);
