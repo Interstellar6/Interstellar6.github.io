@@ -1,33 +1,83 @@
 {
-  "version": "local-bedroom4-anysplat-semanticmesh-backface-20260712",
+  "version": "local-bedroom4-anysplat-semanticmesh-backface-smallchunks-20260712",
   "chunkSize": 20971520,
   "alignment": {
     "id": "anysplat_to_video2mesh_camera_umeyama_20260711",
     "method": "camera_center_sim3_from_frame_similarity_matches",
     "note": "Viewer alignment only. Frame matches were inferred from local image similarity between AnySplat's 10 sampled frames and Video2Mesh's 50 COLMAP frames, then fitted with Umeyama Sim(3) from AnySplat extrinsic translation to COLMAP camera centers.",
     "frameMatches": [
-      [0, 0],
-      [1, 5],
-      [2, 11],
-      [3, 16],
-      [4, 22],
-      [5, 27],
-      [6, 33],
-      [7, 38],
-      [8, 44],
-      [9, 49]
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        2,
+        11
+      ],
+      [
+        3,
+        16
+      ],
+      [
+        4,
+        22
+      ],
+      [
+        5,
+        27
+      ],
+      [
+        6,
+        33
+      ],
+      [
+        7,
+        38
+      ],
+      [
+        8,
+        44
+      ],
+      [
+        9,
+        49
+      ]
     ],
     "rmseSceneUnits": 0.19981348339550214,
     "maxErrorSceneUnits": 0.34326188933929913,
-    "viewerDefaultOffset": [1.182589, -0.121857, 0.098423],
+    "viewerDefaultOffset": [
+      1.182589,
+      -0.121857,
+      0.098423
+    ],
     "viewerDefaultOffsetNote": "Viewer-only center correction from transformed AnySplat bbox center to semantic collider bbox center. Keeps real Sim(3) camera alignment visible while improving first-load overlay; use UI nudge controls for local inspection.",
     "scale": 21.012695035023306,
     "rotationMatrix": [
-      [0.97358102, -0.14812615, 0.17377754],
-      [0.15241737, 0.98824886, -0.01153866],
-      [-0.17002627, 0.03772053, 0.98471733]
+      [
+        0.97358102,
+        -0.14812615,
+        0.17377754
+      ],
+      [
+        0.15241737,
+        0.98824886,
+        -0.01153866
+      ],
+      [
+        -0.17002627,
+        0.03772053,
+        0.98471733
+      ]
     ],
-    "translation": [-4.10316382, 1.92229385, -6.70837266]
+    "translation": [
+      -4.10316382,
+      1.92229385,
+      -6.70837266
+    ]
   },
   "assets": {
     "visual": {
@@ -54,31 +104,437 @@
       "sha256": "8f87267bcea61714ba5ec60dc63a8453f73c93e82052c97e837e9823579f87ba",
       "parts": [
         {
-          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part00",
-          "size": 20971520,
-          "sha256": "6777084999cd5d96facffb23d502834a9633f01d13f2aab0ac88423dc551e9ff"
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk000",
+          "size": 1048576,
+          "sha256": "03cbce8a2f4a86b5ffe699778c423b950de2b3182db152531af334746299b3f0"
         },
         {
-          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part01",
-          "size": 20971520,
-          "sha256": "ed3b3f3fff0a2b776f6d790affc0de1d412d94884f71fc7122a3e43c63a8d9d2"
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk001",
+          "size": 1048576,
+          "sha256": "2e4265226606b46a544dd7f0cec73631a450d4f46679786960dcd4c041e53b07"
         },
         {
-          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part02",
-          "size": 20971520,
-          "sha256": "fd4aca6abac3e25e19434bb94cb48efe0b66ee14bf5b5873ed5380ec92a5b8a9"
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk002",
+          "size": 1048576,
+          "sha256": "e52efe856afe8dff4402e6e4c5b5df7dd01b0ab58b0522e1ac38ab9300a9bc99"
         },
         {
-          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part03",
-          "size": 20971520,
-          "sha256": "47075f314fe69d878f5c46fa3f40d55ad5d7574d07ed0d0df8f5553671330c5e"
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk003",
+          "size": 1048576,
+          "sha256": "4038baaa3067d5c916d760fa295dfd485e97513c84ea90ccb67b56a3c24589ee"
         },
         {
-          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.part04",
-          "size": 5424925,
-          "sha256": "eabe691f12e5c0598e85cef50b52fefb8794c9d714c5ab8b8535810423635a56"
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk004",
+          "size": 1048576,
+          "sha256": "e5097612889055cd94d6fbeffac7f086654f26668d070e51e0eac81f6a964549"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk005",
+          "size": 1048576,
+          "sha256": "17b12c3f13ca7648f1e83a67ca998fcf8f8fc41357c0181e8d96de33aac31acb"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk006",
+          "size": 1048576,
+          "sha256": "6638797c6887f02a6b598d573d170f126b0d702ecd0610a3fcd7963859083ace"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk007",
+          "size": 1048576,
+          "sha256": "ad24023a070010da9f8f94a1803a2869190351ad97a51a50d2c238d01d9bf00b"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk008",
+          "size": 1048576,
+          "sha256": "5566dd0571714dd2fc27ea9ab78074abba7fc05ae3fd822a0bc9442edf7e75df"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk009",
+          "size": 1048576,
+          "sha256": "3c40b6ee3474314daa6e28176300229cdfd60987a4d5dae11f91439287e1b62a"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk010",
+          "size": 1048576,
+          "sha256": "40512794fb3d1da2c3711a332e9ac1f809b8cde785d3d58b7568671eabdfc218"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk011",
+          "size": 1048576,
+          "sha256": "8961f3726317c3503f8316d744a3464b8b8a1c4aaa5c963c923712c86126ad46"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk012",
+          "size": 1048576,
+          "sha256": "3e99febf8e630303ad700c724b31640b52c76db3c2348ca9d01c7023d6571466"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk013",
+          "size": 1048576,
+          "sha256": "6be37c05179cda2e72ae46c2112e567a53f04fb190d2a2eac2c25bdf854c1b59"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk014",
+          "size": 1048576,
+          "sha256": "102ced77b55d316a591c42afa0dded8e68db3d1d7f10edb6fd9d69470d88dd8b"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk015",
+          "size": 1048576,
+          "sha256": "f271f407d2606df8495a70e5333cb1b6c8fce93501586aa1a9e491b8a0a69870"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk016",
+          "size": 1048576,
+          "sha256": "fc044f66aab620264e99ba7c8b58a8888cf2451e2135b251d7524c5f95c343ca"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk017",
+          "size": 1048576,
+          "sha256": "a74a001a18ef89ee3dda04bb0845e60ed82fb98288f7bbc948acfa396f55be85"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk018",
+          "size": 1048576,
+          "sha256": "b914ad08eb15f10ed442f317fc4e5ed332002b9d78a32bb36a9a6c0fce2bee98"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk019",
+          "size": 1048576,
+          "sha256": "eac60f6903117c24fbb444fe430faacb033a3b4d30ed6b34f345fcb3d9fed05c"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk020",
+          "size": 1048576,
+          "sha256": "8c8416f2d7073a74c205cb33cb0d02c0981c690b6a854ce92a89ca575783f48c"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk021",
+          "size": 1048576,
+          "sha256": "fc1464fc5ea34f0db921d5e2e3fcc7306a55bf9bea30e56839e94fd4fb77fe2c"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk022",
+          "size": 1048576,
+          "sha256": "6d8513db4ec8ccd53da07bd21644d269efae73f3d7697592ffdb8e029b6cedf7"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk023",
+          "size": 1048576,
+          "sha256": "7fdb17191916dc329f906162f57332670aea2e33872ddeded68c3345298f962a"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk024",
+          "size": 1048576,
+          "sha256": "e2674747bc2ef8fa8f63e14c8d7c6a707a291ff500cb4dcb937024fdb7732d3e"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk025",
+          "size": 1048576,
+          "sha256": "cbbb8855fbdc6d14e3a2ce728b2516ce62a310a4cfbe98b92e170c9577af4eb3"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk026",
+          "size": 1048576,
+          "sha256": "ef73708526205a95135906076fc7844ba52f1f137f111d2fd15edadf760bb895"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk027",
+          "size": 1048576,
+          "sha256": "43ba5e6485d297979cb91781de5fa357e37f0346f2566f46e561b77454e2f56e"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk028",
+          "size": 1048576,
+          "sha256": "3d571f0b27854f25814656c6f15b2dd1483283e53ab7595a83cfe7420a6a5c68"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk029",
+          "size": 1048576,
+          "sha256": "0412843bc81d3b536a534764e086139fc1b1b4dbf2df71973b59e2e03e657ede"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk030",
+          "size": 1048576,
+          "sha256": "4aebe81fe156522976deae572d57c757fe5de5988fa18bbb4ac987818a100882"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk031",
+          "size": 1048576,
+          "sha256": "3fa43a1a9fc15a696a7eca6eb3ff27840540a3241be92a178645b0284f9f3c18"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk032",
+          "size": 1048576,
+          "sha256": "c149c5c50b4a347db429a7dce2c1899ac8151c24da55b859d925b3e20fddf6ed"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk033",
+          "size": 1048576,
+          "sha256": "f9c40fce12b4170610a116a2b3a4a9d80c9665a057ffa298fcf1b8c04fc7d245"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk034",
+          "size": 1048576,
+          "sha256": "be574fe2ca05821a31c335e0ea6cc522cf06d8e0a719d734a79f01b6b71932a8"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk035",
+          "size": 1048576,
+          "sha256": "30d90f0c0902dc0ea717aae5e279094297fe21dd601b1e8ba3fe2199e2052692"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk036",
+          "size": 1048576,
+          "sha256": "b06d5fcaba01545dbee1e23bac333fc0f8ae8448d4219ea607ade36e1b76a20a"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk037",
+          "size": 1048576,
+          "sha256": "24c961fae073afe09bfaac9b78eb69dd45c996520173c12246f3dee07b410dbe"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk038",
+          "size": 1048576,
+          "sha256": "27692c0a431702e6b8d59b07bce3fd49e7c21a60767bfd3b6f19ec9743184ea5"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk039",
+          "size": 1048576,
+          "sha256": "c9e810dece6888d2853690738cdf490819c0d17d51a20d5daafb5edcb251c4d8"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk040",
+          "size": 1048576,
+          "sha256": "9cc1910e52881debe1ac7f2e15797635c98c21eb034cb4a78a2e9d0e95d70d4c"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk041",
+          "size": 1048576,
+          "sha256": "e74040af859409937b80d50b0b127e9cbe2f2435ff707908527344a7af65cfd0"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk042",
+          "size": 1048576,
+          "sha256": "ba9da8bb22dfbd0a3eadbdc8b403708b72beeff744af616af95aad822970c602"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk043",
+          "size": 1048576,
+          "sha256": "63fdd0045940f7c2b5315fb69a7c265841076ba50af11b847ff0a048a9cbaa09"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk044",
+          "size": 1048576,
+          "sha256": "9c117109efcf2cbbf39c164ae9f2ac155c7057fb143000b8de615f61746484f9"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk045",
+          "size": 1048576,
+          "sha256": "6abd6798a5907613b916bf6887387517d08d1f439fe87d93e17be10beb71df24"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk046",
+          "size": 1048576,
+          "sha256": "17c6b3fa4adc9311f05d69bafeaa011cf17bf377c3e8c5fcd6ce0870eefb9c47"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk047",
+          "size": 1048576,
+          "sha256": "af137ea4126ccfa826f20573dba7ba5b7334242086df20922b08722205b7f607"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk048",
+          "size": 1048576,
+          "sha256": "4cff0ff8b70312423a3c03626f704ef29311fc4548a6240d20e70feb111d21c9"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk049",
+          "size": 1048576,
+          "sha256": "6c3e7a1fec734b4499ab0531ac10cf81b6bdf0f7617f62263c6eb113158ac6ca"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk050",
+          "size": 1048576,
+          "sha256": "37ec6110cec835e2cbdfb8ba27aaf9b61977616623cf052f8970390f970d3c09"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk051",
+          "size": 1048576,
+          "sha256": "9e128865638565c495168ca137f8b6b02406474f98d4e8ae60734b36b8e9879a"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk052",
+          "size": 1048576,
+          "sha256": "d6e668391a10020c591518314f764daa97219a8562bd117dfa4a2891c072b896"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk053",
+          "size": 1048576,
+          "sha256": "3782b736bc90456ea8b674a62a50a00b37375f1922f32b3f3e538ed6b9f527a5"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk054",
+          "size": 1048576,
+          "sha256": "079808f2a7b7d8b3bf755a74e3520dd2c063ffce952495f5d8e421210e0fcea6"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk055",
+          "size": 1048576,
+          "sha256": "315fb7f0385a2e769698b24e95bd0c9845224bd1f955a39e418f6f0fdae93e0a"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk056",
+          "size": 1048576,
+          "sha256": "92575eae9352bc110e6b2df53591c4dc3f14d078088b13b113dafc7188e8d612"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk057",
+          "size": 1048576,
+          "sha256": "4d875c6f05c9cf0ab11dd09ce0564904b57d70bcf487afa116d8fa953f5c647c"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk058",
+          "size": 1048576,
+          "sha256": "9c59d8ea1e3dcd229fd95c6dc17e00a89cb8b422d799f1ffe71ca11f408b33a1"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk059",
+          "size": 1048576,
+          "sha256": "21d7e091a2fa7c67ff20bc6be5a622ead9df003e58f5414877993b7688447a4f"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk060",
+          "size": 1048576,
+          "sha256": "998e4c1404623f3dbd1872abee16aba3d01892c3ad2e644703577c9738878e05"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk061",
+          "size": 1048576,
+          "sha256": "f0cb4fc790c441313c98965ffd075fdb3bbacf526f04323a19a5a38ce9aeea39"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk062",
+          "size": 1048576,
+          "sha256": "ceac939c91f0780b446e6728d020e0dc12e570fb28788a36fbd1656be4b43c85"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk063",
+          "size": 1048576,
+          "sha256": "f49f48e081d658d4aadd1cd5397a4d2081c03785f7a10d921734f3c532af4b1e"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk064",
+          "size": 1048576,
+          "sha256": "7e3ceae5462f1e17bd6fba5932b4c39ec8a20b1a179cd7da5166b2d16a816a63"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk065",
+          "size": 1048576,
+          "sha256": "862b9f0fc0668d5ac47efcb2e43fcec96e2481c2fdacd83f17c6899d54efb3e8"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk066",
+          "size": 1048576,
+          "sha256": "ed33dfc9678930e5b2b274a6c115158ba5a4fb97cbfd91f069ff03656d6433cd"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk067",
+          "size": 1048576,
+          "sha256": "6ed73859c189b0fd5c1f8096468c82e12dcae6f46fc2d1cc7d31c9538528cbde"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk068",
+          "size": 1048576,
+          "sha256": "dde8fc72ecc7b21aad7b4ebaf14371b14bb9ac59187945dbdc9111553c3c7523"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk069",
+          "size": 1048576,
+          "sha256": "da16ec10a2e3c3ffbf081572638f14cf3b37ae55ba4bd4e575629faa40be8fc7"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk070",
+          "size": 1048576,
+          "sha256": "af4732fe8c9d33686d4fca5b6fee9995e265ccd1dbe8ccd4738c9e7082fc6675"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk071",
+          "size": 1048576,
+          "sha256": "f2e0532ef93cda84483c3dcef5afd7f331eb62b5a8213e1d4946995d3d234126"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk072",
+          "size": 1048576,
+          "sha256": "a2bc20cd4dd2d9679a635580058bfd8bf2660e12a096662435c50856250dd2f2"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk073",
+          "size": 1048576,
+          "sha256": "6446e0cd627d641b9e7f84a5d1607ed3b1231123256b044c511e61ca05ecbdf9"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk074",
+          "size": 1048576,
+          "sha256": "921d222117937f4f6c5c420965374c203dabbd29cac8a938add8e90039a6ad33"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk075",
+          "size": 1048576,
+          "sha256": "33f9a56c4d7c3cc35dfa065c707769ab74af0f8f35e4b33598dcd71c42b31d4f"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk076",
+          "size": 1048576,
+          "sha256": "d340aa54ff4684a5ae0e2ec4aaa6a3b8ff189bcff7db2bacc8436f0c775f7a57"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk077",
+          "size": 1048576,
+          "sha256": "82dce422c3c6f9e0646d7f9628e8df790808529d51cbb87a94b2d9251e018f70"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk078",
+          "size": 1048576,
+          "sha256": "e9ce93664e1f16e0db2e0fe473edb1432fd1f2c848c4c8e7b0f3ccff14884c2a"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk079",
+          "size": 1048576,
+          "sha256": "ff09b75fd5e2cd0b6fc99e637f0b8f07fb5e3b28ae7f2f28fc83effb05ebdfc3"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk080",
+          "size": 1048576,
+          "sha256": "bd0956f589c48769c5806f5647cf64332e191cbbff6a3020030df4c4db011ef6"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk081",
+          "size": 1048576,
+          "sha256": "3a869b29e1a439d4780f2f8444c176db46e1ec90f28364bd94b7f3b18fc78e7d"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk082",
+          "size": 1048576,
+          "sha256": "f0777f4cedf4d3a96a2846dda1cc52169ae1c7017d14b8bc916b3a15f72dd3b1"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk083",
+          "size": 1048576,
+          "sha256": "a9f3fbb92ce4bfc81d43bd5148c25ee9072fdf367e55f5a132f4cc54f1f37878"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk084",
+          "size": 1048576,
+          "sha256": "d1d990df6b466f20eea6941e8ee24e401a740cd98f8d62ac5b9ae8d0f267d535"
+        },
+        {
+          "url": "./assets/chunks/visual_bedroom_4_anysplat_20260709_044525_gaussians_ply.chunk085",
+          "size": 182045,
+          "sha256": "cf0271609dbbe198a2aed18d38f2261868bbe8aafd2ff5b8aca760fe44b85c48"
         }
-      ]
+      ],
+      "chunkSize": 1048576
     },
     "collider": {
       "id": "bedroom_4_semantic_mesh_local_debug_ply",

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-20260712";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-smallchunks-20260712";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
 const ALIGNMENT_NUDGE_STEP = 0.35;
@@ -932,15 +932,14 @@ async function loadManifest() {
   return manifest;
 }
 
-async function fetchPart(part, label, loaded, total) {
+async function fetchPart(part, label, onLoaded) {
   const response = await fetch(`${part.url}?v=${ASSET_VERSION}`);
   if (!response.ok) throw new Error(`${label} chunk failed: ${part.url} ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (part.size && bytes.length !== part.size) {
     throw new Error(`${label} chunk size mismatch: expected ${part.size}, got ${bytes.length}`);
   }
-  const pct = total ? Math.round(((loaded + bytes.length) / total) * 100) : 0;
-  modeChip.textContent = `${label} chunks ${pct}%`;
+  onLoaded?.(bytes.length);
   return bytes;
 }
 
@@ -948,15 +947,33 @@ async function getChunkedBytes(assetKey) {
   const asset = manifest.assets[assetKey];
   if (!asset?.parts?.length) throw new Error(`No chunk list for ${assetKey}`);
   const merged = new Uint8Array(asset.size);
-  let offset = 0;
+  const offsets = [];
+  let expectedTotal = 0;
   for (const part of asset.parts) {
-    const bytes = await fetchPart(part, asset.label || assetKey, offset, asset.size);
-    merged.set(bytes, offset);
-    offset += bytes.length;
+    offsets.push(expectedTotal);
+    expectedTotal += Number(part.size) || 0;
   }
-  if (offset !== asset.size) {
-    throw new Error(`${assetKey} assembled size mismatch: expected ${asset.size}, got ${offset}`);
+  if (expectedTotal !== asset.size) {
+    throw new Error(`${assetKey} manifest size mismatch: expected ${asset.size}, parts sum ${expectedTotal}`);
   }
+  let loaded = 0;
+  let nextIndex = 0;
+  const label = asset.label || assetKey;
+  const concurrency = Math.min(asset.parts.length, asset.parts.length > 12 ? 6 : 2);
+  const onLoaded = (length) => {
+    loaded += length;
+    const pct = asset.size ? Math.round((loaded / asset.size) * 100) : 0;
+    modeChip.textContent = `${label} chunks ${pct}%`;
+  };
+  async function worker() {
+    while (nextIndex < asset.parts.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const bytes = await fetchPart(asset.parts[index], label, onLoaded);
+      merged.set(bytes, offsets[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
   return { asset, bytes: merged };
 }
 
