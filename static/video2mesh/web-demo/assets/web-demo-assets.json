@@ -1,5 +1,5 @@
 {
-  "version": "local-bedroom4-anysplat-semanticmesh-backface-smallchunks-20260712",
+  "version": "local-bedroom4-anysplat-semanticmesh-backface-allchunks-20260712",
   "chunkSize": 20971520,
   "alignment": {
     "id": "anysplat_to_video2mesh_camera_umeyama_20260711",
@@ -603,16 +603,157 @@
       "sha256": "85a5efefd6f7c78c70da8c556de0cf27bbb3102373aa0a8f5ed96db5b477e5e4",
       "parts": [
         {
-          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.part00",
-          "size": 20971520,
-          "sha256": "c6ef064b54719ce45f3c9a157ac9a24fe68ce945e0a0f9d757e15cc5c5d11aa1"
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk000",
+          "size": 1048576,
+          "sha256": "1241f0b05610d9a226355d144bb9641dd5fe1cc5a124de8a950be2802b77ee29"
         },
         {
-          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.part01",
-          "size": 9703305,
-          "sha256": "ab91c218d285e0352133d8ade3ea63812c14974f748b5cd0bf343cd5bead72cb"
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk001",
+          "size": 1048576,
+          "sha256": "45f7a163776de20ec78e230101d886ce01dc13246c6624253de59cc134f16dc5"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk002",
+          "size": 1048576,
+          "sha256": "b189590aa6f28cfbc5ebb1c25581e70664189d6b7aff30f869226b02ae502518"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk003",
+          "size": 1048576,
+          "sha256": "d4bb3bb13257c89b9e662ff28de72f8b2e59fcd5f0f2949066ef1ee1e42317e1"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk004",
+          "size": 1048576,
+          "sha256": "eaf599f88908a9e38268df038191de87a71b8b97a91ad84cc54c5c8467b1b367"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk005",
+          "size": 1048576,
+          "sha256": "77e406641722e605f46952ef3d8ba9a03f13b45efba48735961072725c4f8b3d"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk006",
+          "size": 1048576,
+          "sha256": "1ff800ed19106075414d328994d67320ffa4ee7b41562689cbd6dbe73b496aa2"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk007",
+          "size": 1048576,
+          "sha256": "31590cd18beca48c683a878fd9d78aea58584dc350dc1a40cc81de02db0f919f"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk008",
+          "size": 1048576,
+          "sha256": "5b45377269daf28d80b75151f5d9685e845b59953c4797c960725e72b851ac9e"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk009",
+          "size": 1048576,
+          "sha256": "f82e5a203b63b9f5541998485ae81736bba4819aabb6e786ebb2b9947288c3ea"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk010",
+          "size": 1048576,
+          "sha256": "bf0628897fbc97b69bc865ae7d87c1c1263930484b1a545f7a409745a64ca959"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk011",
+          "size": 1048576,
+          "sha256": "a1ef3de9e08a4e23ffffa6efb075ef84c1a4773a3b679e92b14a3b39a3f84af6"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk012",
+          "size": 1048576,
+          "sha256": "e151160ca64fe4e7e140727aac74211f71c71f33ac01120158bb3902fcbea6e9"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk013",
+          "size": 1048576,
+          "sha256": "402fd6fbc2ebebaa8cd5673b0cb453899fb37b2979231ed4790cee74523976be"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk014",
+          "size": 1048576,
+          "sha256": "b6ce1f38f33e5c6d4b0140b250176bd3db51e5fe4174521ef58467d70b3615ac"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk015",
+          "size": 1048576,
+          "sha256": "d0dd37c6694b32473bd0810af9c55cfbdcde505cbf0527d2706e18d83de836b9"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk016",
+          "size": 1048576,
+          "sha256": "102b31d8952a9fae47d6829fc26cc92f275f30db2fdc83aa9a0b1846b077f2db"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk017",
+          "size": 1048576,
+          "sha256": "8005360f6f1181b819b96846b506176275e28ce8b72b82ef87918d947fdbab5c"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk018",
+          "size": 1048576,
+          "sha256": "e08cc27b8d42a1f56d79c917e20b5aa161c2dfa0c66e02c4aff6b0d09ec90832"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk019",
+          "size": 1048576,
+          "sha256": "9101c9e5074a0408149683980dcadf2b1f172287c6c8ea126db2e8c08adffb5d"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk020",
+          "size": 1048576,
+          "sha256": "6ddb08e65fd8faecf2b889d4a8412f0f7158217ef3cc87a0d50974fc75203614"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk021",
+          "size": 1048576,
+          "sha256": "8eae89cbc08ef57f179be2fa3ee81cf0b85c3e56539047e4b50c10594f9bad79"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk022",
+          "size": 1048576,
+          "sha256": "3bd0ea1cfd12638f11600f8ba78cddb9e80164e39b991562d937140ff51def8a"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk023",
+          "size": 1048576,
+          "sha256": "0377376efc66b6a2e59286e9f6f50510ba51d84ece8c4d518001dfbf3146f773"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk024",
+          "size": 1048576,
+          "sha256": "3548ddae966acd2060d374bc0c2eafd5cb18390cdd77a8d4aa4a0e82a0fbb6d5"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk025",
+          "size": 1048576,
+          "sha256": "430d9205427843fa4299e139e96a4230ab25fe9d241c8a400d3fa304152feab0"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk026",
+          "size": 1048576,
+          "sha256": "105d285c1d8528f9961d5461437ec79548bd69c12363ec8fd5c6c2c9592df2f4"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk027",
+          "size": 1048576,
+          "sha256": "292e0be09747040d82a2fea76cf555cbb46a4629f23974c746fc070f69318d82"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk028",
+          "size": 1048576,
+          "sha256": "3acdf50ae0b84cfd15a54b19c211175e507c22df79cdf535af28a6e4945cc61d"
+        },
+        {
+          "url": "./assets/chunks/collider_bedroom_4_semantic_mesh_local_debug_ply.chunk029",
+          "size": 266121,
+          "sha256": "23a8f8933c462ada7d4352b7375a31dab88bd8137a57a687aff16bbc08321da1"
         }
-      ]
+      ],
+      "chunkSize": 1048576
     }
   }
 }

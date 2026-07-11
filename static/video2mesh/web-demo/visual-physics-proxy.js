@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-smallchunks-20260712";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-allchunks-20260712";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
 const ALIGNMENT_NUDGE_STEP = 0.35;
