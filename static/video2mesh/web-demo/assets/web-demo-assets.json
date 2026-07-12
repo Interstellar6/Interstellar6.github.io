@@ -1,6 +1,6 @@
 {
-  "version": "local-bedroom4-anysplat-semanticmesh-backface-allchunks-20260712",
-  "chunkSize": 20971520,
+  "version": "local-bedroom4-anysplat-semanticmesh-backface-resilientchunks-20260712",
+  "chunkSize": 1048576,
   "alignment": {
     "id": "anysplat_to_video2mesh_camera_umeyama_20260711",
     "method": "camera_center_sim3_from_frame_similarity_matches",

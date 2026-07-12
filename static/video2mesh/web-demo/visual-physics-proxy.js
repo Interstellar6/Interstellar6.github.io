@@ -2,8 +2,12 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-allchunks-20260712";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-resilientchunks-20260712";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
+const ASSET_FETCH_CONCURRENCY = 3;
+const ASSET_FETCH_TIMEOUT_MS = 30_000;
+const ASSET_FETCH_MAX_ATTEMPTS = 4;
+const ASSET_FETCH_RETRY_BASE_MS = 650;
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
 const ALIGNMENT_NUDGE_STEP = 0.35;
 const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
@@ -933,14 +937,35 @@ async function loadManifest() {
 }
 
 async function fetchPart(part, label, onLoaded) {
-  const response = await fetch(`${part.url}?v=${ASSET_VERSION}`);
-  if (!response.ok) throw new Error(`${label} chunk failed: ${part.url} ${response.status}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (part.size && bytes.length !== part.size) {
-    throw new Error(`${label} chunk size mismatch: expected ${part.size}, got ${bytes.length}`);
+  let lastFailure = "unknown error";
+  for (let attempt = 1; attempt <= ASSET_FETCH_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), ASSET_FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${part.url}?v=${ASSET_VERSION}`, {
+        cache: "force-cache",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (part.size && bytes.length !== part.size) {
+        throw new Error(`size mismatch: expected ${part.size}, got ${bytes.length}`);
+      }
+      onLoaded?.(bytes.length);
+      return bytes;
+    } catch (error) {
+      lastFailure = error?.name === "AbortError"
+        ? `timed out after ${ASSET_FETCH_TIMEOUT_MS / 1000}s`
+        : (error?.message || String(error));
+      if (attempt === ASSET_FETCH_MAX_ATTEMPTS) break;
+      const fileName = part.url.split("/").pop() || part.url;
+      modeChip.textContent = `${label} retry ${attempt}/${ASSET_FETCH_MAX_ATTEMPTS - 1} · ${fileName}`;
+      await new Promise((resolve) => window.setTimeout(resolve, ASSET_FETCH_RETRY_BASE_MS * attempt));
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
   }
-  onLoaded?.(bytes.length);
-  return bytes;
+  throw new Error(`${label} chunk failed after ${ASSET_FETCH_MAX_ATTEMPTS} attempts: ${part.url} (${lastFailure})`);
 }
 
 async function getChunkedBytes(assetKey) {
@@ -959,7 +984,7 @@ async function getChunkedBytes(assetKey) {
   let loaded = 0;
   let nextIndex = 0;
   const label = asset.label || assetKey;
-  const concurrency = Math.min(asset.parts.length, asset.parts.length > 12 ? 6 : 2);
+  const concurrency = Math.min(asset.parts.length, ASSET_FETCH_CONCURRENCY);
   const onLoaded = (length) => {
     loaded += length;
     const pct = asset.size ? Math.round((loaded / asset.size) * 100) : 0;
