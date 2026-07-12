@@ -2,16 +2,16 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-multicdn-20260712";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-multicdn2-20260712";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 // Immutable mirrors of the exact chunk hashes referenced by this deployment.
 const ASSET_CDN_BASE_URLS = [
-  "https://gcore.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/",
   "https://cdn.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/",
+  "https://gcore.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/",
   "https://fastly.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/",
 ];
 const ASSET_FETCH_CONCURRENCY = 3;
-const ASSET_FETCH_TIMEOUT_MS = 75_000;
+const ASSET_FETCH_TIMEOUTS_MS = [30_000, 75_000, 75_000, 75_000];
 const ASSET_FETCH_MAX_ATTEMPTS = 4;
 const ASSET_FETCH_RETRY_BASE_MS = 650;
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
@@ -946,7 +946,8 @@ async function fetchPart(part, label, onLoaded) {
   let lastFailure = "unknown error";
   for (let attempt = 1; attempt <= ASSET_FETCH_MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), ASSET_FETCH_TIMEOUT_MS);
+    const timeoutMs = ASSET_FETCH_TIMEOUTS_MS[Math.min(attempt - 1, ASSET_FETCH_TIMEOUTS_MS.length - 1)];
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
       const localUrl = `${part.url}?v=${ASSET_VERSION}`;
       const mirrorIndex = Math.min(attempt - 2, ASSET_CDN_BASE_URLS.length - 1);
@@ -965,7 +966,7 @@ async function fetchPart(part, label, onLoaded) {
       return bytes;
     } catch (error) {
       lastFailure = error?.name === "AbortError"
-        ? `timed out after ${ASSET_FETCH_TIMEOUT_MS / 1000}s`
+        ? `timed out after ${timeoutMs / 1000}s`
         : (error?.message || String(error));
       if (attempt === ASSET_FETCH_MAX_ATTEMPTS) break;
       const fileName = part.url.split("/").pop() || part.url;
