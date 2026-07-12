@@ -2,18 +2,18 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-multicdn2-20260712";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-adaptivecdn-20260712";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 // Immutable mirrors of the exact chunk hashes referenced by this deployment.
-const ASSET_CDN_BASE_URLS = [
-  "https://cdn.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/",
-  "https://gcore.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/",
-  "https://fastly.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/",
+const ASSET_FETCH_SOURCES = [
+  { key: "origin", label: "relumeow.top", baseUrl: null, timeoutMs: 30_000 },
+  { key: "jsdelivr", label: "cdn.jsdelivr.net", baseUrl: "https://cdn.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/", timeoutMs: 75_000 },
+  { key: "gcore", label: "gcore.jsdelivr.net", baseUrl: "https://gcore.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/", timeoutMs: 75_000 },
+  { key: "fastly", label: "fastly.jsdelivr.net", baseUrl: "https://fastly.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/", timeoutMs: 75_000 },
 ];
 const ASSET_FETCH_CONCURRENCY = 3;
-const ASSET_FETCH_TIMEOUTS_MS = [30_000, 75_000, 75_000, 75_000];
-const ASSET_FETCH_MAX_ATTEMPTS = 4;
 const ASSET_FETCH_RETRY_BASE_MS = 650;
+let preferredAssetSourceKey = "origin";
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
 const ALIGNMENT_NUDGE_STEP = 0.35;
 const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
@@ -942,18 +942,30 @@ async function loadManifest() {
   return manifest;
 }
 
+function getAssetPartSources(part) {
+  const path = part.url.replace(/^\.\//, "");
+  const sources = ASSET_FETCH_SOURCES.map((source) => ({
+    ...source,
+    url: source.baseUrl ? `${source.baseUrl}${path}` : `${part.url}?v=${ASSET_VERSION}`,
+  }));
+  const preferred = sources.find((source) => source.key === preferredAssetSourceKey) || sources[0];
+  if (preferred.key === "origin") return sources;
+  return [
+    preferred,
+    ...sources.filter((source) => source.key !== preferred.key && source.key !== "origin"),
+    sources[0],
+  ];
+}
+
 async function fetchPart(part, label, onLoaded) {
+  const sources = getAssetPartSources(part);
   let lastFailure = "unknown error";
-  for (let attempt = 1; attempt <= ASSET_FETCH_MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < sources.length; attempt += 1) {
+    const source = sources[attempt];
     const controller = new AbortController();
-    const timeoutMs = ASSET_FETCH_TIMEOUTS_MS[Math.min(attempt - 1, ASSET_FETCH_TIMEOUTS_MS.length - 1)];
-    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = window.setTimeout(() => controller.abort(), source.timeoutMs);
     try {
-      const localUrl = `${part.url}?v=${ASSET_VERSION}`;
-      const mirrorIndex = Math.min(attempt - 2, ASSET_CDN_BASE_URLS.length - 1);
-      const mirrorUrl = `${ASSET_CDN_BASE_URLS[Math.max(0, mirrorIndex)]}${part.url.replace(/^\.\//, "")}`;
-      const requestUrl = attempt === 1 ? localUrl : mirrorUrl;
-      const response = await fetch(requestUrl, {
+      const response = await fetch(source.url, {
         cache: "force-cache",
         signal: controller.signal,
       });
@@ -962,22 +974,24 @@ async function fetchPart(part, label, onLoaded) {
       if (part.size && bytes.length !== part.size) {
         throw new Error(`size mismatch: expected ${part.size}, got ${bytes.length}`);
       }
+      preferredAssetSourceKey = source.key;
       onLoaded?.(bytes.length);
       return bytes;
     } catch (error) {
       lastFailure = error?.name === "AbortError"
-        ? `timed out after ${timeoutMs / 1000}s`
+        ? `${source.label} timed out after ${source.timeoutMs / 1000}s`
         : (error?.message || String(error));
-      if (attempt === ASSET_FETCH_MAX_ATTEMPTS) break;
+      const nextSource = sources[attempt + 1];
+      if (!nextSource) break;
+      preferredAssetSourceKey = nextSource.key;
       const fileName = part.url.split("/").pop() || part.url;
-      const nextMirror = ASSET_CDN_BASE_URLS[Math.min(attempt - 1, ASSET_CDN_BASE_URLS.length - 1)];
-      modeChip.textContent = `${label} retry ${attempt}/${ASSET_FETCH_MAX_ATTEMPTS - 1} via ${new URL(nextMirror).hostname} · ${fileName}`;
-      await new Promise((resolve) => window.setTimeout(resolve, ASSET_FETCH_RETRY_BASE_MS * attempt));
+      modeChip.textContent = `${label} retry ${attempt + 1}/${sources.length - 1} via ${nextSource.label} · ${fileName}`;
+      await new Promise((resolve) => window.setTimeout(resolve, ASSET_FETCH_RETRY_BASE_MS * (attempt + 1)));
     } finally {
       window.clearTimeout(timeoutId);
     }
   }
-  throw new Error(`${label} chunk failed after ${ASSET_FETCH_MAX_ATTEMPTS} attempts: ${part.url} (${lastFailure})`);
+  throw new Error(`${label} chunk failed across ${sources.length} sources: ${part.url} (${lastFailure})`);
 }
 
 async function getChunkedBytes(assetKey) {
