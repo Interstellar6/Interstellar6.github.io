@@ -2,10 +2,12 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-resilientchunks-20260712";
+const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-cdnfallback-20260712";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
+// Immutable mirror of the exact chunk hashes referenced by this deployment.
+const ASSET_CDN_BASE_URL = "https://cdn.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/";
 const ASSET_FETCH_CONCURRENCY = 3;
-const ASSET_FETCH_TIMEOUT_MS = 30_000;
+const ASSET_FETCH_TIMEOUT_MS = 75_000;
 const ASSET_FETCH_MAX_ATTEMPTS = 4;
 const ASSET_FETCH_RETRY_BASE_MS = 650;
 const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
@@ -942,7 +944,10 @@ async function fetchPart(part, label, onLoaded) {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), ASSET_FETCH_TIMEOUT_MS);
     try {
-      const response = await fetch(`${part.url}?v=${ASSET_VERSION}`, {
+      const localUrl = `${part.url}?v=${ASSET_VERSION}`;
+      const cdnUrl = `${ASSET_CDN_BASE_URL}${part.url.replace(/^\.\//, "")}`;
+      const requestUrl = attempt === 1 ? localUrl : cdnUrl;
+      const response = await fetch(requestUrl, {
         cache: "force-cache",
         signal: controller.signal,
       });
@@ -959,7 +964,7 @@ async function fetchPart(part, label, onLoaded) {
         : (error?.message || String(error));
       if (attempt === ASSET_FETCH_MAX_ATTEMPTS) break;
       const fileName = part.url.split("/").pop() || part.url;
-      modeChip.textContent = `${label} retry ${attempt}/${ASSET_FETCH_MAX_ATTEMPTS - 1} · ${fileName}`;
+      modeChip.textContent = `${label} retry ${attempt}/${ASSET_FETCH_MAX_ATTEMPTS - 1} via CDN · ${fileName}`;
       await new Promise((resolve) => window.setTimeout(resolve, ASSET_FETCH_RETRY_BASE_MS * attempt));
     } finally {
       window.clearTimeout(timeoutId);
