@@ -435,6 +435,13 @@ body[data-view="admin"] .toc-edge-toggle {
 .project-mark.large { width: 48px; height: 48px; font-size: 15px; }
 .project-mark.large:nth-child(1) { background: var(--accent); color: var(--accent-ink); }
 
+.directory-tree,
+.tree-group,
+.tree-children {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .directory-tree { display: grid; gap: 2px; }
 .home-rail-link {
   min-height: 34px;
@@ -529,6 +536,7 @@ body[data-view="admin"] .toc-edge-toggle {
   min-height: 54px;
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 20px;
   align-items: flex-start;
   margin-bottom: 26px;
@@ -573,9 +581,18 @@ body.preview-mode .doc-body h2 {
 
 .route-label { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
 .content-topbar h1 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: 0; }
-.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.topbar-actions {
+  min-width: 0;
+  flex: 1 1 360px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
 .search-box {
-  min-width: min(420px, 34vw);
+  min-width: min(300px, 100%);
+  flex: 1 1 280px;
   height: 38px;
   display: flex;
   align-items: center;
@@ -1024,7 +1041,14 @@ body[data-view="home"] .content-topbar h1 {
   background: #11111a;
   color: #f2ecff;
 }
-.doc-body :not(pre) > code { background: var(--accent-soft); color: var(--accent); padding: 2px 5px; border-radius: 4px; }
+.doc-body :not(pre) > code {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 2px 5px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 
 .link-preview-card {
   position: fixed;
@@ -1553,6 +1577,10 @@ html[data-theme="light"] .doc-body pre {
     visibility: visible;
     pointer-events: auto;
   }
+  body.rail-collapsed .project-rail,
+  body.toc-collapsed .outline-rail {
+    display: none;
+  }
   .rail-resizer,
   .toc-resizer { display: none; }
   .rail-toggle {
@@ -1615,4 +1643,9 @@ html[data-theme="light"] .doc-body pre {
   .search-box { min-width: 0; width: 100%; }
   .project-demo-link { justify-self: start; }
   .account-popover { right: auto; left: 0; }
+}
+
+@media (max-width: 420px) {
+  .toc-edge-toggle { top: 60px; }
+  .content-shell { padding-top: 104px; }
 }

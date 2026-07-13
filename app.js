@@ -278,11 +278,15 @@
     const saved = loadJson(LAYOUT_KEY, {});
     const width = Number(saved.railWidth || 292);
     const tocWidth = Number(saved.tocWidth || 236);
-    const compact = window.matchMedia?.("(max-width: 1080px)")?.matches;
+    const compact = isCompactLayout();
     setRailWidth(width);
     setTocWidth(tocWidth);
     setRailCollapsed(compact ? true : Boolean(saved.railCollapsed), { persist: false });
     setTocCollapsed(compact ? true : Boolean(saved.tocCollapsed), { persist: false });
+  }
+
+  function isCompactLayout() {
+    return Boolean(window.matchMedia?.("(max-width: 1080px)")?.matches);
   }
 
   function setRailWidth(width) {
@@ -304,7 +308,9 @@
   }
 
   function toggleRail() {
-    setRailCollapsed(!document.body.classList.contains("rail-collapsed"));
+    const expanding = document.body.classList.contains("rail-collapsed");
+    if (expanding && isCompactLayout()) setTocCollapsed(true, { persist: false });
+    setRailCollapsed(!expanding);
   }
 
   function setTocWidth(width) {
@@ -328,7 +334,9 @@
   }
 
   function toggleToc() {
-    setTocCollapsed(!document.body.classList.contains("toc-collapsed"));
+    const expanding = document.body.classList.contains("toc-collapsed");
+    if (expanding && isCompactLayout()) setRailCollapsed(true, { persist: false });
+    setTocCollapsed(!expanding);
   }
 
   function initRailResize() {
