@@ -36,7 +36,9 @@ def site_version_inputs() -> list[Path]:
     paths = [ROOT / "styles.css", ROOT / "app.js", ROOT / "theme.js", PROJECTS_FILE]
     for config in (yaml.safe_load(PROJECTS_FILE.read_text(encoding="utf-8")) or {}).get("projects", []):
         try:
-            repo = (ROOT / config["source"]["repo"]).resolve()
+            slug = str(config["slug"])
+            env_key = "RELUMEOW_SOURCE_REPO_" + re.sub(r"[^A-Z0-9]+", "_", slug.upper()).strip("_")
+            repo = Path(os.environ.get(env_key) or (ROOT / config["source"]["repo"])).expanduser().resolve()
             docs_root = (repo / config["source"]["docs_root"]).resolve()
         except KeyError:
             continue
