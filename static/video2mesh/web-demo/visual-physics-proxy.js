@@ -3,14 +3,14 @@ import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 
-const ASSET_VERSION = "bedroom4-pgsr-tsdf-native-backface-origin-20260715";
+const ASSET_VERSION = "bedroom4-pgsr-tsdf-native-backface-cdn-20260715";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 // Immutable mirrors of the exact chunk hashes referenced by this deployment.
 const ASSET_FETCH_SOURCES = [
   { key: "origin", label: "relumeow.top", baseUrl: null, timeoutMs: 30_000 },
-  { key: "jsdelivr", label: "cdn.jsdelivr.net", baseUrl: "https://cdn.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/", timeoutMs: 75_000 },
-  { key: "gcore", label: "gcore.jsdelivr.net", baseUrl: "https://gcore.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/", timeoutMs: 75_000 },
-  { key: "fastly", label: "fastly.jsdelivr.net", baseUrl: "https://fastly.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@c743b5170f7d7ed973f1fc80e8ecba6610466ae5/static/video2mesh/web-demo/", timeoutMs: 75_000 },
+  { key: "jsdelivr", label: "cdn.jsdelivr.net", baseUrl: "https://cdn.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@725e34b54f6f3c0fe7389e9e170d7a7ece9a900a/static/video2mesh/web-demo/", timeoutMs: 75_000 },
+  { key: "gcore", label: "gcore.jsdelivr.net", baseUrl: "https://gcore.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@725e34b54f6f3c0fe7389e9e170d7a7ece9a900a/static/video2mesh/web-demo/", timeoutMs: 75_000 },
+  { key: "fastly", label: "fastly.jsdelivr.net", baseUrl: "https://fastly.jsdelivr.net/gh/Interstellar6/Interstellar6.github.io@725e34b54f6f3c0fe7389e9e170d7a7ece9a900a/static/video2mesh/web-demo/", timeoutMs: 75_000 },
 ];
 const ASSET_FETCH_CONCURRENCY = 3;
 const ASSET_FETCH_RETRY_BASE_MS = 650;
