@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 
-const ASSET_VERSION = "local-bedroom4-anysplat-semanticmesh-backface-adaptivecdn-20260712";
+const ASSET_VERSION = "bedroom4-pgsr-tsdf-native-backface-origin-20260715";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 // Immutable mirrors of the exact chunk hashes referenced by this deployment.
 const ASSET_FETCH_SOURCES = [
@@ -14,7 +15,7 @@ const ASSET_FETCH_SOURCES = [
 const ASSET_FETCH_CONCURRENCY = 3;
 const ASSET_FETCH_RETRY_BASE_MS = 650;
 let preferredAssetSourceKey = "origin";
-const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-offset-v5";
+const ALIGNMENT_STORAGE_KEY = "video2mesh-web-demo-alignment-pgsr-tsdf-v1";
 const ALIGNMENT_NUDGE_STEP = 0.35;
 const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
 const ALIGNMENT_ROTATION_LIMIT_DEG = { x: 45, y: 90, z: 45 };
@@ -115,7 +116,7 @@ visualLayer.name = "visual-spark-3dgs-layer";
 scene.add(visualLayer);
 
 const colliderLayer = new THREE.Group();
-colliderLayer.name = "semantic-mesh-collider-layer";
+colliderLayer.name = "mesh-collider-layer";
 scene.add(colliderLayer);
 
 const markerLayer = new THREE.Group();
@@ -139,7 +140,7 @@ const state = {
   colliderRenderMode: "hidden",
   semanticColor: true,
   cameraMode: "orbit",
-  cameraPreset: "front",
+  cameraPreset: "back",
   cameraControlVersion: CAMERA_CONTROL_VERSION,
   qualityMode: "balanced",
   targetPixelRatio: Number(initialPixelRatio.toFixed(2)),
@@ -163,6 +164,7 @@ const state = {
   colliderFaces: 0,
   colliderSha256: "",
   colliderSourcePath: "",
+  colliderHasSemantics: false,
   transformSource: "pending",
   transformScale: 1,
   transformTranslation: { x: 0, y: 0, z: 0 },
@@ -911,13 +913,15 @@ function updateHud() {
   visualMetric.textContent = state.visualReady ? formatCount(state.visualCount) : "loading";
   meshMetric.textContent = state.colliderReady ? formatCount(state.colliderFaces) : "loading";
   hitMetric.textContent = state.lastHitInfo ? `face ${state.lastHitInfo.faceIndex}` : "none";
-  semanticMetric.textContent = state.lastHitInfo ? `id ${state.lastHitInfo.objectId}` : "none";
+  semanticMetric.textContent = state.lastHitInfo
+    ? (state.lastHitInfo.objectId == null ? "n/a" : `id ${state.lastHitInfo.objectId}`)
+    : "none";
   robotMetric.textContent = state.robotReady
     ? (state.robotGrounded ? `${state.robotSpeed.toFixed(1)} m/s` : "air")
     : "loading";
   modeChip.textContent = [
-    state.visualReady ? "AnySplat Gaussian PLY visual ready" : "loading visual PLY",
-    state.colliderReady ? "semantic PLY collider ready" : "loading collider PLY",
+    state.visualReady ? "PGSR Gaussian PLY visual ready" : "loading visual PLY",
+    state.colliderReady ? "TSDF PLY collider ready" : "loading collider PLY",
     state.transformSource === "pending"
       ? "alignment pending"
       : `${state.transformSource}${state.transformRmseSceneUnits ? ` rmse ${state.transformRmseSceneUnits}` : ""}`,
@@ -1056,7 +1060,7 @@ async function loadVisualSplat(transform) {
       modeChip.textContent = `Spark decode ${pct}%`;
     },
   });
-  visualSplat.name = "AnySplat bedroom_4 Gaussian visual proxy";
+  visualSplat.name = asset.label || "PGSR bedroom_4 Gaussian visual proxy";
   visualSplat.raycast = () => {};
   visualLayer.add(visualSplat);
   applyVisualTransform(transform);
@@ -1064,7 +1068,7 @@ async function loadVisualSplat(transform) {
   await visualSplat.initialized;
   applyVisualTransform(transform);
   state.visualReady = true;
-  showToast("AnySplat Gaussian PLY visual layer loaded.");
+  showToast("PGSR Gaussian PLY visual layer loaded.");
   updateHud();
   setLayerVisibility();
 }
@@ -1136,7 +1140,43 @@ function parseSemanticMeshPly(text) {
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
-  return { geometry, faceSemantics, vertexCount, faceCount };
+  return { geometry, faceSemantics, vertexCount, faceCount, hasSemantics: true };
+}
+
+function parseBinaryMeshPly(bytes) {
+  const arrayBuffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer
+    : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const geometry = new PLYLoader().parse(arrayBuffer);
+  const position = geometry.getAttribute("position");
+  if (!position?.count) throw new Error("Binary mesh PLY is missing vertex positions.");
+  if (!geometry.index?.count || geometry.index.count % 3 !== 0) {
+    throw new Error("Binary mesh PLY is missing triangular face indices.");
+  }
+  if (!geometry.getAttribute("color")) {
+    const colors = new Float32Array(position.count * 3);
+    colors.fill(0.72);
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  }
+  if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  return {
+    geometry,
+    faceSemantics: [],
+    vertexCount: position.count,
+    faceCount: geometry.index.count / 3,
+    hasSemantics: false,
+  };
+}
+
+function parseColliderMeshPly(bytes, asset) {
+  if (asset.format === "semantic-ascii-mesh-ply") {
+    return parseSemanticMeshPly(new TextDecoder().decode(bytes));
+  }
+  if (asset.format === "open3d-binary-little-endian-triangle-mesh-ply") {
+    return parseBinaryMeshPly(bytes);
+  }
+  throw new Error(`Unsupported collider PLY format: ${asset.format || "unknown"}`);
 }
 
 function estimateMainWalkableFloorY(geometry) {
@@ -1197,14 +1237,22 @@ async function loadColliderMesh() {
   state.colliderFaces = asset.faceCount || 0;
   state.colliderSha256 = asset.sha256 || "";
   state.colliderSourcePath = asset.sourcePath || "";
+  state.colliderFormat = asset.format || "ply";
 
-  const text = new TextDecoder().decode(bytes);
-  const parsed = parseSemanticMeshPly(text);
+  const parsed = parseColliderMeshPly(bytes, asset);
+  if (asset.vertexCount && parsed.vertexCount !== asset.vertexCount) {
+    throw new Error(`Collider vertex count mismatch: expected ${asset.vertexCount}, got ${parsed.vertexCount}`);
+  }
+  if (asset.faceCount && parsed.faceCount !== asset.faceCount) {
+    throw new Error(`Collider face count mismatch: expected ${asset.faceCount}, got ${parsed.faceCount}`);
+  }
+  state.colliderHasSemantics = parsed.hasSemantics;
+  if (!parsed.hasSemantics) state.semanticColor = false;
   const rawColliderBounds = parsed.geometry.boundingBox.clone();
   scenePresentationPivot = boxCenter(colliderMetaBox || rawColliderBounds);
   state.scenePresentationPivot = roundedVector(scenePresentationPivot);
   applyScenePresentationToGeometry(parsed.geometry, scenePresentationPivot);
-  colliderFaceSemantics = parsed.faceSemantics;
+  colliderFaceSemantics = parsed.faceSemantics || [];
   colliderBounds = parsed.geometry.boundingBox.clone();
   robotFloorYEstimate = estimateMainWalkableFloorY(parsed.geometry);
   state.robotFloorYEstimate = Number.isFinite(robotFloorYEstimate)
@@ -1212,7 +1260,7 @@ async function loadColliderMesh() {
     : null;
 
   const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
+    vertexColors: parsed.geometry.hasAttribute("color"),
     side: THREE.DoubleSide,
     roughness: 0.86,
     metalness: 0.02,
@@ -1221,9 +1269,9 @@ async function loadColliderMesh() {
     depthWrite: false,
   });
   colliderMesh = new THREE.Mesh(parsed.geometry, material);
-  colliderMesh.name = "semantic PLY mesh collider proxy";
-  colliderMesh.userData.colliderLabel = "bedroom_4_semantic_mesh_local_debug";
-  colliderMesh.userData.surfaceType = "semantic-mesh-ply-collider";
+  colliderMesh.name = asset.label || "PLY mesh collider proxy";
+  colliderMesh.userData.colliderLabel = asset.label || asset.id || "mesh collider";
+  colliderMesh.userData.surfaceType = parsed.hasSemantics ? "semantic-mesh-ply-collider" : "tsdf-mesh-ply-collider";
   colliderMesh.userData.walkable = true;
   colliderMesh.userData.characterCollision = true;
   colliderMesh.userData.cameraCollision = true;
@@ -1238,14 +1286,14 @@ async function loadColliderMesh() {
       depthWrite: false,
     })
   );
-  colliderWire.name = "semantic PLY collider sampled wire overlay";
+  colliderWire.name = "PLY collider sampled wire overlay";
   colliderWire.raycast = () => {};
   colliderLayer.add(colliderWire);
 
   state.colliderVertices = parsed.vertexCount;
   state.colliderFaces = parsed.faceCount;
   state.colliderReady = true;
-  showToast("Semantic mesh PLY collider loaded.");
+  showToast(parsed.hasSemantics ? "Semantic mesh PLY collider loaded." : "TSDF mesh PLY collider loaded.");
   updateHud();
   return colliderBounds;
 }
@@ -1263,6 +1311,10 @@ function applyColliderMode() {
 
 function applySemanticColorMode() {
   if (!colliderMesh) return;
+  if (!state.colliderHasSemantics) {
+    state.semanticColor = false;
+    return;
+  }
   const geometry = colliderMesh.geometry;
   const color = geometry.getAttribute("color");
   const rawColor = geometry.getAttribute("rawColor");
@@ -2109,7 +2161,12 @@ function setLayerVisibility() {
   document.querySelector("#toggleVisual").classList.toggle("is-active", state.showVisual);
   document.querySelector("#toggleCollider").classList.toggle("is-active", state.colliderRenderMode !== "hidden");
   document.querySelector("#toggleCollider").textContent = `Collider ${state.colliderRenderMode}`;
-  document.querySelector("#toggleSemantic").classList.toggle("is-active", state.semanticColor);
+  const semanticButton = document.querySelector("#toggleSemantic");
+  semanticButton.disabled = !state.colliderHasSemantics;
+  semanticButton.classList.toggle("is-active", state.colliderHasSemantics && state.semanticColor);
+  semanticButton.textContent = state.colliderHasSemantics
+    ? (state.semanticColor ? "Semantic color" : "Raw mesh color")
+    : "Raw mesh color";
   document.querySelector("#toggleCameraMode").classList.toggle("is-active", state.cameraMode === "fly");
   document.querySelector("#toggleCameraMode").textContent = state.cameraMode === "fly" ? "Fly Camera" : "Orbit Camera";
   document.querySelectorAll("[data-camera-preset]").forEach((button) => {
@@ -2172,6 +2229,10 @@ function bindEvents() {
     showToast(`Collider render mode: ${COLLIDER_LABELS[state.colliderRenderMode]}. Raycast stays active.`);
   });
   document.querySelector("#toggleSemantic").addEventListener("click", () => {
+    if (!state.colliderHasSemantics) {
+      showToast("This TSDF collider has no semantic attributes.");
+      return;
+    }
     state.semanticColor = !state.semanticColor;
     applySemanticColorMode();
     setLayerVisibility();
