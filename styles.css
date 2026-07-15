@@ -261,6 +261,12 @@ body.toc-collapsed .outline-rail {
   transform: translateX(16px);
   visibility: hidden;
   pointer-events: none;
+  width: 0;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-left: 0;
+  overflow: hidden;
 }
 
 .outline-head {
