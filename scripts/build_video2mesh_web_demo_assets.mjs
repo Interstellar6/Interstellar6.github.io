@@ -203,6 +203,48 @@ function buildAsset({ filePath, prefix, tempChunkDir, chunkSize, manifestFields 
   };
 }
 
+function readCameraPreset(filePath, frameName) {
+  const cameras = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!Array.isArray(cameras)) throw new Error(`${filePath}: expected a camera array`);
+  const camera = cameras.find((entry) => String(entry.img_name) === String(frameName));
+  if (!camera) throw new Error(`${filePath}: camera frame ${frameName} not found`);
+  if (!Array.isArray(camera.position) || camera.position.length !== 3) {
+    throw new Error(`${filePath}: camera ${frameName} has no 3D position`);
+  }
+  if (!Array.isArray(camera.rotation) || camera.rotation.length !== 3) {
+    throw new Error(`${filePath}: camera ${frameName} has no 3x3 rotation`);
+  }
+  const forward = camera.rotation.map((row) => Number(row?.[2]));
+  const up = camera.rotation.map((row) => Number(row?.[1]));
+  if ([...camera.position, ...forward, ...up].some((value) => !Number.isFinite(Number(value)))) {
+    throw new Error(`${filePath}: camera ${frameName} contains non-finite pose values`);
+  }
+  const verticalFovDeg = 2 * Math.atan(Number(camera.height) / (2 * Number(camera.fy))) * 180 / Math.PI;
+  return {
+    id: `pgsr_input_camera_${frameName}`,
+    label: "Doorway entry",
+    sourcePath: filePath,
+    sourceFrame: String(frameName),
+    coordinateFrame: "visual_native",
+    eye: camera.position.map(Number),
+    forward,
+    up,
+    targetDistance: 6,
+    verticalFovDeg: Number(verticalFovDeg.toFixed(6)),
+  };
+}
+
+function dominantWorldUp(cameraPreset) {
+  const imageUp = cameraPreset.up.map((value) => -Number(value));
+  let axis = 0;
+  for (let index = 1; index < 3; index += 1) {
+    if (Math.abs(imageUp[index]) > Math.abs(imageUp[axis])) axis = index;
+  }
+  const worldUp = [0, 0, 0];
+  worldUp[axis] = imageUp[axis] < 0 ? -1 : 1;
+  return worldUp;
+}
+
 function replaceChunks(tempChunkDir, chunkDir) {
   fs.mkdirSync(chunkDir, { recursive: true });
   for (const name of fs.readdirSync(chunkDir)) {
@@ -217,6 +259,9 @@ const options = parseArgs(process.argv.slice(2));
 const visualPath = path.resolve(requireOption(options, "visual"));
 const colliderPath = path.resolve(requireOption(options, "collider"));
 const version = requireOption(options, "version");
+const inferredCamerasPath = path.resolve(path.dirname(visualPath), "../..", "cameras.json");
+const camerasPath = path.resolve(options.cameras || inferredCamerasPath);
+const doorwayFrame = options["doorway-frame"] || "000000";
 const chunkSize = Number(options["chunk-size"] || DEFAULT_CHUNK_SIZE);
 if (!Number.isInteger(chunkSize) || chunkSize <= 0) throw new Error("--chunk-size must be a positive integer");
 
@@ -227,6 +272,13 @@ fs.rmSync(tempChunkDir, { recursive: true, force: true });
 fs.mkdirSync(tempChunkDir, { recursive: true });
 
 try {
+  const cameraPresets = {
+    doorway: readCameraPreset(camerasPath, doorwayFrame),
+  };
+  const coordinateSystem = {
+    worldUp: dominantWorldUp(cameraPresets.doorway),
+    source: `${cameraPresets.doorway.id}_image_up`,
+  };
   const visual = buildAsset({
     filePath: visualPath,
     prefix: "visual_bedroom_4_pgsr_iteration_30000_point_cloud_ply",
@@ -261,6 +313,8 @@ try {
   const manifest = {
     version,
     chunkSize,
+    cameraPresets,
+    coordinateSystem,
     alignment: {
       id: "pgsr_native_shared_frame_20260714",
       method: "identity_same_pgsr_coordinate_frame",

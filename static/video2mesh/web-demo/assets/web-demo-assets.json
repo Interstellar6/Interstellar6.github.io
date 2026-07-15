@@ -1,6 +1,40 @@
 {
-  "version": "bedroom4-pgsr-tsdf-native-backface-cdn-20260715",
+  "version": "bedroom4-pgsr-tsdf-doorway-camera-20260716",
   "chunkSize": 1048576,
+  "cameraPresets": {
+    "doorway": {
+      "id": "pgsr_input_camera_000000",
+      "label": "Doorway entry",
+      "sourcePath": "/Users/zhangyuxiang/Desktop/worksplace/Video2Mesh/tmp_remote_results/holi_spatial_bedroom4_fresh_da3_sam3_pgsr_20260714_184217/pgsr_scannetppv2_all/bedroom_4/cameras.json",
+      "sourceFrame": "000000",
+      "coordinateFrame": "visual_native",
+      "eye": [
+        -4.259808124205683,
+        1.963646527046706,
+        -6.4737616480170415
+      ],
+      "forward": [
+        0.21489584373036277,
+        -0.0009998972193683907,
+        0.976636482087327
+      ],
+      "up": [
+        -0.016398570246294243,
+        0.999854805545369,
+        0.004631952091720971
+      ],
+      "targetDistance": 6,
+      "verticalFovDeg": 55.776917
+    }
+  },
+  "coordinateSystem": {
+    "worldUp": [
+      0,
+      -1,
+      0
+    ],
+    "source": "pgsr_input_camera_000000_image_up"
+  },
   "alignment": {
     "id": "pgsr_native_shared_frame_20260714",
     "method": "identity_same_pgsr_coordinate_frame",

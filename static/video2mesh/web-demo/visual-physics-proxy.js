@@ -3,7 +3,7 @@ import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 
-const ASSET_VERSION = "bedroom4-pgsr-tsdf-native-backface-cdn-20260715";
+const ASSET_VERSION = "bedroom4-pgsr-tsdf-doorway-camera-20260716";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 // Immutable mirrors of the exact chunk hashes referenced by this deployment.
 const ASSET_FETCH_SOURCES = [
@@ -21,16 +21,18 @@ const ALIGNMENT_ROTATION_STEP_DEG = 1.5;
 const ALIGNMENT_ROTATION_LIMIT_DEG = { x: 45, y: 90, z: 45 };
 const DEFAULT_SCENE_PRESENTATION_YAW_DEG = 180;
 const DEFAULT_SCENE_PRESENTATION_LABEL = "back-facing default";
-const CAMERA_CONTROL_VERSION = "supersplat-smooth-20260711";
-const CAMERA_ORBIT_SENSITIVITY = 0.0054;
-const CAMERA_TRACKPAD_ORBIT_SENSITIVITY = 0.0044;
+const CAMERA_CONTROL_VERSION = "supersplat-free-orbit-20260716";
+const DEFAULT_CAMERA_FOV_DEG = 58;
+const CAMERA_ORBIT_SENSITIVITY = 0.0085;
+const CAMERA_TRACKPAD_ORBIT_SENSITIVITY = 0.006;
 const CAMERA_PAN_SENSITIVITY = 0.00145;
 const CAMERA_WHEEL_ZOOM_SENSITIVITY = 0.00165;
 const CAMERA_DRAG_ZOOM_SENSITIVITY = 0.012;
 const CAMERA_MIN_POLAR = 0.035;
 const CAMERA_MAX_POLAR = Math.PI - 0.035;
-const CAMERA_PRESETS = ["front", "back", "left", "right", "top", "robot"];
+const CAMERA_PRESETS = ["doorway", "front", "back", "left", "right", "top", "robot"];
 const CAMERA_PRESET_LABELS = {
+  doorway: "Doorway entry",
   front: "Interior front",
   back: "Interior back",
   left: "Interior left",
@@ -80,7 +82,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x070a0d, 18, 62);
 
-const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.03, 180);
+const camera = new THREE.PerspectiveCamera(DEFAULT_CAMERA_FOV_DEG, window.innerWidth / window.innerHeight, 0.03, 180);
 camera.position.set(24, 16, 30);
 
 const controls = new OrbitControls(camera, canvas);
@@ -140,7 +142,9 @@ const state = {
   colliderRenderMode: "hidden",
   semanticColor: true,
   cameraMode: "orbit",
-  cameraPreset: "back",
+  cameraPreset: "doorway",
+  cameraPresetSource: "pending",
+  worldUp: { x: 0, y: 1, z: 0 },
   cameraControlVersion: CAMERA_CONTROL_VERSION,
   qualityMode: "balanced",
   targetPixelRatio: Number(initialPixelRatio.toFixed(2)),
@@ -738,6 +742,10 @@ function buildManualVisualTransform(patch = {}) {
 }
 
 function exposeDebugApi() {
+  window.__setCameraPreset = (preset = "doorway") => {
+    setCameraOrbitView(preset, { announce: false, immediate: true });
+    return syncDebugState();
+  };
   window.__setVisualAlignment = (patch = {}) => {
     const transform = buildManualVisualTransform(patch);
     baseVisualTransform = transform;
@@ -823,6 +831,7 @@ function orbitCameraAroundTarget({ theta = 0, phi = 0, scale = 1, announce = fal
   clampCameraSpherical(smoothCamera.desiredSpherical);
   state.robotFollowCamera = false;
   state.cameraPreset = "custom";
+  state.cameraPresetSource = "free-orbit";
   if (announce) setLayerVisibility();
   if (announce) showToast("Camera adjusted around the current indoor target.");
 }
@@ -843,6 +852,7 @@ function panCameraTarget(deltaX, deltaY, { announce = false } = {}) {
   state.robotFollowCamera = false;
   state.cameraMode = "orbit";
   state.cameraPreset = "custom";
+  state.cameraPresetSource = "free-orbit-pan";
   if (announce) setLayerVisibility();
   if (announce) showToast("Camera target panned.");
 }
@@ -851,6 +861,22 @@ function zoomCameraByWheel(deltaY, sensitivity = CAMERA_WHEEL_ZOOM_SENSITIVITY) 
   if (!smoothCamera.initialized) syncSmoothCameraFromCurrent();
   const scale = Math.exp(THREE.MathUtils.clamp(deltaY * sensitivity, -0.7, 0.7));
   orbitCameraAroundTarget({ scale });
+}
+
+function moveCameraRigAlongView(distance, { announce = false } = {}) {
+  if (!smoothCamera.initialized) syncSmoothCameraFromCurrent();
+  const eye = smoothCamera.desiredTarget.clone()
+    .add(new THREE.Vector3().setFromSpherical(smoothCamera.desiredSpherical));
+  const forward = smoothCamera.desiredTarget.clone().sub(eye).normalize();
+  const move = forward.multiplyScalar(distance);
+  smoothCamera.desiredTarget.add(move);
+  smoothCamera.target.add(move.clone().multiplyScalar(0.22));
+  state.robotFollowCamera = false;
+  state.cameraMode = "orbit";
+  state.cameraPreset = "custom";
+  state.cameraPresetSource = "free-orbit-dolly";
+  if (announce) setLayerVisibility();
+  if (announce) showToast(distance >= 0 ? "Camera moved into the room." : "Camera moved toward the doorway.");
 }
 
 function classifyWheelInput(event) {
@@ -943,6 +969,14 @@ async function loadManifest() {
   if (!response.ok) throw new Error(`Manifest failed: ${response.status} ${response.statusText}`);
   manifest = await response.json();
   state.manifestVersion = manifest.version || "";
+  const configuredUp = vectorFromArray(manifest.coordinateSystem?.worldUp);
+  if (configuredUp.lengthSq() > 0.5 && Math.abs(configuredUp.y) > 0.9) {
+    ROBOT_UP.copy(configuredUp.normalize());
+  } else {
+    ROBOT_UP.set(0, 1, 0);
+  }
+  state.worldUp = roundedVector(ROBOT_UP);
+  camera.up.copy(ROBOT_UP);
   return manifest;
 }
 
@@ -1184,7 +1218,9 @@ function estimateMainWalkableFloorY(geometry) {
   const position = geometry.getAttribute("position");
   const faceCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
   const bounds = geometry.boundingBox;
-  const yLimit = bounds.min.y + boxSize(bounds).y * 0.45;
+  const upSign = Math.sign(ROBOT_UP.y) || 1;
+  const minHeight = Math.min(bounds.min.y * upSign, bounds.max.y * upSign);
+  const heightLimit = minHeight + boxSize(bounds).y * 0.45;
   const bins = new Map();
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
@@ -1211,10 +1247,11 @@ function estimateMainWalkableFloorY(geometry) {
     const area2 = normal.length();
     if (area2 < 1e-7) continue;
     normal.divideScalar(area2);
-    if (normal.y < 0.55) continue;
+    if (normal.dot(ROBOT_UP) < 0.55) continue;
     const y = (a.y + b.y + c.y) / 3;
-    if (y > yLimit) continue;
-    const bin = Math.round(y * 2) / 2;
+    const height = y * upSign;
+    if (height > heightLimit) continue;
+    const bin = Math.round(height * 2) / 2;
     bins.set(bin, (bins.get(bin) || 0) + area2 * 0.5);
   }
 
@@ -1226,7 +1263,7 @@ function estimateMainWalkableFloorY(geometry) {
       bestArea = area;
     }
   }
-  return Number.isFinite(bestY) ? bestY : null;
+  return Number.isFinite(bestY) ? bestY / upSign : null;
 }
 
 async function loadColliderMesh() {
@@ -1418,25 +1455,31 @@ function createRobot() {
   });
   group.userData.height = 1.72;
   group.userData.groundOffset = 0.02;
+  group.userData.upSign = Math.sign(ROBOT_UP.y) || 1;
+  group.scale.y = group.userData.upSign;
   group.visible = state.robotEnabled;
   return group;
 }
 
 function getColliderProbeHeights() {
-  if (!colliderBounds) return { originY: 40, range: 120 };
+  if (!colliderBounds) return { originY: 40, directionY: -1, range: 120 };
   const size = boxSize(colliderBounds);
+  const upSign = Math.sign(ROBOT_UP.y) || 1;
   return {
-    originY: colliderBounds.max.y + Math.max(4, size.y * 0.25),
+    originY: upSign > 0
+      ? colliderBounds.max.y + Math.max(4, size.y * 0.25)
+      : colliderBounds.min.y - Math.max(4, size.y * 0.25),
+    directionY: -upSign,
     range: Math.max(16, size.y + 12),
   };
 }
 
 function groundProbe(position, { preferFloor = true } = {}) {
   if (!colliderMesh) return null;
-  const { originY, range } = getColliderProbeHeights();
+  const { originY, directionY, range } = getColliderProbeHeights();
   groundRaycaster.set(
     new THREE.Vector3(position.x, originY, position.z),
-    new THREE.Vector3(0, -1, 0)
+    new THREE.Vector3(0, directionY, 0)
   );
   groundRaycaster.near = 0;
   groundRaycaster.far = range;
@@ -1465,7 +1508,7 @@ function isRobotStepBlocked(fromPosition, toPosition) {
   if (distance < 1e-4) return false;
   direction.normalize();
   const origin = fromPosition.clone();
-  origin.y += 0.58;
+  origin.addScaledVector(ROBOT_UP, 0.58);
   obstacleRaycaster.set(origin, direction);
   obstacleRaycaster.near = 0.04;
   obstacleRaycaster.far = Math.min(0.72, distance + 0.24);
@@ -1473,7 +1516,7 @@ function isRobotStepBlocked(fromPosition, toPosition) {
   return hits.some((hit) => {
     const normal = hit.face?.normal.clone() || ROBOT_UP.clone();
     normal.transformDirection(hit.object.matrixWorld);
-    return Math.abs(normal.y) < 0.52;
+    return Math.abs(normal.dot(ROBOT_UP)) < 0.52;
   });
 }
 
@@ -1527,7 +1570,7 @@ function respawnRobotAt(point, source = "manual") {
     robotLayer.add(robotGroup);
   }
   const spawn = point.clone();
-  spawn.y += robotGroup.userData.groundOffset;
+  spawn.addScaledVector(ROBOT_UP, robotGroup.userData.groundOffset);
   robotGroup.position.copy(spawn);
   robotGroup.rotation.y = Math.atan2(camera.position.x - spawn.x, camera.position.z - spawn.z);
   robotGroundY = spawn.y;
@@ -1594,7 +1637,7 @@ function getCameraPlanarBasis() {
   forward.y = 0;
   if (forward.lengthSq() < 1e-5) forward.set(0, 0, -1);
   forward.normalize();
-  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, ROBOT_UP).normalize();
   return { forward, right };
 }
 
@@ -1616,7 +1659,7 @@ function moveRobotOnMesh(move, distance) {
   state.robotBlocked = false;
 
   if (!state.robotObstacleCollision && Number.isFinite(robotFloorYEstimate) && isInsideColliderFootprint(target)) {
-    target.y = robotFloorYEstimate + robotGroup.userData.groundOffset;
+    target.y = robotFloorYEstimate + ROBOT_UP.y * robotGroup.userData.groundOffset;
     robotGroup.position.copy(target);
     robotGroundY = robotGroup.position.y;
     state.robotGrounded = true;
@@ -1642,7 +1685,7 @@ function moveRobotOnMesh(move, distance) {
     return false;
   }
   const next = stepGround.point.clone();
-  next.y += robotGroup.userData.groundOffset;
+  next.addScaledVector(ROBOT_UP, robotGroup.userData.groundOffset);
   const maxStep = stepGround.source === "floor-plane-fallback" ? 1.25 : 0.92;
   if (robotGroundY != null && Math.abs(next.y - robotGroundY) > maxStep) {
     state.robotBlocked = true;
@@ -1712,10 +1755,10 @@ function updateRobot(dt) {
     );
     robotGroup.rotation.y += yawDelta * Math.min(1, dt * 12);
     robotBobPhase += dt * speed * 6.2;
-    robotGroup.scale.y = 1 + Math.sin(robotBobPhase) * 0.025;
+    robotGroup.scale.y = robotGroup.userData.upSign * (1 + Math.sin(robotBobPhase) * 0.025);
   } else {
     robotBobPhase += dt * 1.8;
-    robotGroup.scale.y = 1 + Math.sin(robotBobPhase) * 0.008;
+    robotGroup.scale.y = robotGroup.userData.upSign * (1 + Math.sin(robotBobPhase) * 0.008);
   }
 
   state.robotPosition = roundedVector(robotGroup.position);
@@ -1725,90 +1768,143 @@ function updateRobot(dt) {
 
 function updateRobotFollowCamera(dt, immediate = false) {
   if (!robotGroup || state.cameraMode !== "orbit") return;
-  const target = robotGroup.position.clone().add(new THREE.Vector3(0, 0.82, 0));
+  camera.up.copy(ROBOT_UP);
+  const target = robotGroup.position.clone().addScaledVector(ROBOT_UP, 0.82);
   const yaw = robotGroup.rotation.y;
   const followOffset = new THREE.Vector3(
     Math.sin(yaw + Math.PI) * 4.8,
-    2.15,
+    0,
     Math.cos(yaw + Math.PI) * 4.8
   );
-  const desiredCamera = target.clone().add(followOffset);
+  const desiredCamera = target.clone().add(followOffset).addScaledVector(ROBOT_UP, 2.15);
   setSmoothCameraPose(desiredCamera, target, { immediate });
   state.cameraPreset = "robotFollow";
+  state.cameraPresetSource = "robot-follow";
 }
 
 function cameraAnchorFromScene(bounds, { preferRobot = false } = {}) {
   const center = boxCenter(bounds);
-  const floorY = Number.isFinite(robotFloorYEstimate) ? robotFloorYEstimate : bounds.min.y;
+  const floorY = Number.isFinite(robotFloorYEstimate)
+    ? robotFloorYEstimate
+    : (ROBOT_UP.y > 0 ? bounds.min.y : bounds.max.y);
   const anchor = preferRobot && robotGroup ? robotGroup.position.clone() : center.clone();
-  anchor.y = floorY + 1.15;
+  anchor.y = floorY + ROBOT_UP.y * 1.15;
   return { anchor, center, floorY };
+}
+
+function transformVisualPoint(point, transform) {
+  const rotation = rotationRowsToMatrix4(normalizeRotationRows(transform.rotationMatrix));
+  return point.clone().multiplyScalar(transform.scale).applyMatrix4(rotation).add(transform.translation);
+}
+
+function transformVisualDirection(direction, transform) {
+  const rotation = rotationRowsToMatrix4(normalizeRotationRows(transform.rotationMatrix));
+  return direction.clone().applyMatrix4(rotation).normalize();
+}
+
+function recordedCameraPreset(presetId) {
+  const preset = manifest?.cameraPresets?.[presetId];
+  if (!preset || preset.coordinateFrame !== "visual_native" || !baseVisualTransform) return null;
+  if (!Array.isArray(preset.eye) || !Array.isArray(preset.forward)) return null;
+  const transform = applyScenePresentationToVisualTransform(baseVisualTransform);
+  const nativeEye = vectorFromArray(preset.eye);
+  const nativeForward = vectorFromArray(preset.forward);
+  const nativeImageUp = Array.isArray(preset.up)
+    ? vectorFromArray(preset.up).multiplyScalar(-1)
+    : new THREE.Vector3(0, 1, 0);
+  if (nativeForward.lengthSq() < 1e-8) return null;
+  nativeForward.normalize();
+  const targetDistance = clampFinite(preset.targetDistance, 0.5, 40, 6);
+  const nativeTarget = nativeEye.clone().addScaledVector(nativeForward, targetDistance);
+  return {
+    eye: transformVisualPoint(nativeEye, transform),
+    target: transformVisualPoint(nativeTarget, transform),
+    up: transformVisualDirection(nativeImageUp, transform),
+    fovDeg: clampFinite(preset.verticalFovDeg, 32, 95, DEFAULT_CAMERA_FOV_DEG),
+    source: preset.id || preset.sourceFrame || "recorded-camera",
+  };
 }
 
 function cameraPresetVectors(preset, bounds) {
   const size = boxSize(bounds);
   const roomMax = Math.max(size.x, size.y, size.z, 1);
-  const presetId = CAMERA_PRESETS.includes(preset) ? preset : "front";
+  let presetId = CAMERA_PRESETS.includes(preset) ? preset : "doorway";
+  const recorded = recordedCameraPreset(presetId);
+  if (recorded) return { ...recorded, size, roomMax, presetId };
+  if (presetId === "doorway") presetId = "back";
   const { anchor, center, floorY } = cameraAnchorFromScene(bounds, { preferRobot: presetId === "robot" });
   const indoorDistance = Math.max(2.6, Math.min(7.2, Math.max(size.x, size.z) * 0.18));
   const lowHeight = Math.max(1.15, Math.min(2.1, size.y * 0.14));
   const lookAhead = Math.max(1.2, Math.min(3.8, Math.max(size.x, size.z) * 0.055));
+  const upSign = Math.sign(ROBOT_UP.y) || 1;
   let eye;
-  let target = anchor.clone().add(new THREE.Vector3(0, 0.42, 0));
+  let target = anchor.clone().addScaledVector(ROBOT_UP, 0.42);
 
   if (presetId === "front") {
-    eye = anchor.clone().add(new THREE.Vector3(0, lowHeight, -indoorDistance));
-    target.add(new THREE.Vector3(0, 0.05, lookAhead));
+    eye = anchor.clone().add(new THREE.Vector3(0, upSign * lowHeight, -indoorDistance));
+    target.add(new THREE.Vector3(0, upSign * 0.05, lookAhead));
   } else if (presetId === "back") {
-    eye = anchor.clone().add(new THREE.Vector3(0, lowHeight, indoorDistance));
-    target.add(new THREE.Vector3(0, 0.05, -lookAhead));
+    eye = anchor.clone().add(new THREE.Vector3(0, upSign * lowHeight, indoorDistance));
+    target.add(new THREE.Vector3(0, upSign * 0.05, -lookAhead));
   } else if (presetId === "left") {
-    eye = anchor.clone().add(new THREE.Vector3(-indoorDistance, lowHeight, 0));
-    target.add(new THREE.Vector3(lookAhead, 0.05, 0));
+    eye = anchor.clone().add(new THREE.Vector3(-indoorDistance, upSign * lowHeight, 0));
+    target.add(new THREE.Vector3(lookAhead, upSign * 0.05, 0));
   } else if (presetId === "right") {
-    eye = anchor.clone().add(new THREE.Vector3(indoorDistance, lowHeight, 0));
-    target.add(new THREE.Vector3(-lookAhead, 0.05, 0));
+    eye = anchor.clone().add(new THREE.Vector3(indoorDistance, upSign * lowHeight, 0));
+    target.add(new THREE.Vector3(-lookAhead, upSign * 0.05, 0));
   } else if (presetId === "top") {
     const topDistance = Math.max(6.5, Math.min(18, roomMax * 0.46));
-    target = new THREE.Vector3(center.x, floorY + 0.45, center.z);
-    eye = target.clone().add(new THREE.Vector3(0.02, topDistance, 0.02));
+    target = new THREE.Vector3(center.x, floorY + upSign * 0.45, center.z);
+    eye = target.clone().addScaledVector(ROBOT_UP, topDistance).add(new THREE.Vector3(0.02, 0, 0.02));
   } else {
     const yaw = robotGroup ? robotGroup.rotation.y : 0;
     const back = new THREE.Vector3(Math.sin(yaw + Math.PI), 0, Math.cos(yaw + Math.PI));
     const side = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(0.65);
-    target = anchor.clone().add(new THREE.Vector3(0, 0.52, 0));
+    target = anchor.clone().addScaledVector(ROBOT_UP, 0.52);
     eye = target.clone()
       .addScaledVector(back, Math.max(2.4, Math.min(4.2, indoorDistance * 0.74)))
       .add(side)
-      .add(new THREE.Vector3(0, Math.max(1.05, lowHeight * 0.75), 0));
+      .addScaledVector(ROBOT_UP, Math.max(1.05, lowHeight * 0.75));
   }
 
-  const minY = floorY + 0.35;
-  if (eye.y < minY) eye.y = minY;
-  return { eye, target, size, roomMax, presetId };
+  const minEyeY = floorY + upSign * 0.35;
+  if ((eye.y - minEyeY) * upSign < 0) eye.y = minEyeY;
+  return {
+    eye,
+    target,
+    size,
+    roomMax,
+    presetId,
+    fovDeg: DEFAULT_CAMERA_FOV_DEG,
+    source: `procedural-${presetId}`,
+    up: ROBOT_UP.clone(),
+  };
 }
 
-function setCameraOrbitView(preset = "front", { announce = false } = {}) {
+function setCameraOrbitView(preset = "doorway", { announce = false, immediate = false } = {}) {
   const bounds = transformedVisualBounds || colliderBounds;
   if (!bounds || bounds.isEmpty()) return;
-  const { eye, target, roomMax, presetId } = cameraPresetVectors(preset, bounds);
+  const { eye, target, roomMax, presetId, fovDeg, source, up } = cameraPresetVectors(preset, bounds);
   state.robotFollowCamera = false;
   state.cameraMode = "orbit";
   state.cameraPreset = presetId;
+  state.cameraPresetSource = source;
   keyState.clear();
   controls.minDistance = 0.08;
   controls.maxDistance = Math.max(16, Math.min(48, roomMax * 1.35));
   camera.near = 0.02;
   camera.far = Math.max(220, roomMax * 12);
+  camera.fov = fovDeg;
+  camera.up.copy(up || ROBOT_UP);
   camera.updateProjectionMatrix();
-  setSmoothCameraPose(eye, target, { immediate: false });
+  setSmoothCameraPose(eye, target, { immediate });
   setLayerVisibility();
   if (announce) showToast(`Camera preset: ${CAMERA_PRESET_LABELS[presetId]}.`);
 }
 
 function frameCameraToInterior({ announce = false } = {}) {
   const nextPreset = announce ? nextValue(CAMERA_PRESETS, state.cameraPreset) : state.cameraPreset;
-  setCameraOrbitView(nextPreset || "front", { announce });
+  setCameraOrbitView(nextPreset || "doorway", { announce });
 }
 
 function updateAdaptiveQuality(fps) {
@@ -1833,12 +1929,15 @@ function frameCameraToBounds(bounds, force = false) {
   const eye = center.clone().add(new THREE.Vector3(distance * 0.72, distance * 0.44, distance * 0.82));
   camera.near = Math.max(0.02, radius / 1200);
   camera.far = Math.max(220, radius * 12);
+  camera.fov = DEFAULT_CAMERA_FOV_DEG;
+  camera.up.copy(ROBOT_UP);
   camera.updateProjectionMatrix();
   controls.maxDistance = Math.max(80, radius * 5);
   setSmoothCameraPose(eye, center, { immediate: false });
   state.robotFollowCamera = false;
   state.cameraMode = "orbit";
   state.cameraPreset = "overview";
+  state.cameraPresetSource = "collider-bounds";
   setLayerVisibility();
   if (force) showToast("View reset to collider/visual proxy bounds.");
 }
@@ -1915,7 +2014,7 @@ function inspectColliderAt(clientX, clientY, { focus = true, spawnRobot = false 
     return;
   }
   const hit = hits[0];
-  const normal = hit.face?.normal.clone() || new THREE.Vector3(0, 1, 0);
+  const normal = hit.face?.normal.clone() || ROBOT_UP.clone();
   normal.transformDirection(hit.object.matrixWorld);
   state.lastHitInfo = describeHit(hit, normal);
   state.lastHit = `${state.lastHitInfo.label}:face-${state.lastHitInfo.faceIndex}`;
@@ -2088,8 +2187,8 @@ function updateFlyCamera(dt) {
   if (keyState.has("KeyS") || keyState.has("ArrowDown")) move.sub(flatForward);
   if (keyState.has("KeyA") || keyState.has("ArrowLeft")) move.sub(right);
   if (keyState.has("KeyD") || keyState.has("ArrowRight")) move.add(right);
-  if (keyState.has("KeyE") || keyState.has("Space")) move.y += 1;
-  if (keyState.has("KeyQ") || keyState.has("ShiftLeft") || keyState.has("ShiftRight")) move.y -= 1;
+  if (keyState.has("KeyE") || keyState.has("Space")) move.add(ROBOT_UP);
+  if (keyState.has("KeyQ") || keyState.has("ShiftLeft") || keyState.has("ShiftRight")) move.sub(ROBOT_UP);
   if (move.lengthSq() === 0) return;
   const speed = keyState.has("AltLeft") || keyState.has("AltRight") ? 28 : 12;
   camera.position.addScaledVector(move.normalize(), speed * dt);
@@ -2241,6 +2340,7 @@ function bindEvents() {
   document.querySelector("#toggleCameraMode").addEventListener("click", () => {
     state.cameraMode = state.cameraMode === "orbit" ? "fly" : "orbit";
     state.cameraPreset = state.cameraMode === "fly" ? "fly" : "custom";
+    state.cameraPresetSource = state.cameraMode === "fly" ? "free-fly" : "free-orbit";
     keyState.clear();
     if (state.cameraMode === "orbit") syncSmoothCameraFromCurrent();
     setLayerVisibility();
@@ -2288,6 +2388,9 @@ function bindEvents() {
       if (action === "down") orbitCameraAroundTarget({ phi: tilt, announce: true });
       if (action === "in") orbitCameraAroundTarget({ scale: 0.78, announce: true });
       if (action === "out") orbitCameraAroundTarget({ scale: 1.28, announce: true });
+      const travelStep = Math.max(0.8, Math.min(2.4, smoothCamera.desiredSpherical.radius * 0.22));
+      if (action === "advance") moveCameraRigAlongView(travelStep, { announce: true });
+      if (action === "retreat") moveCameraRigAlongView(-travelStep, { announce: true });
     });
   });
   document.querySelector("#respawnRobot").addEventListener("click", () => {

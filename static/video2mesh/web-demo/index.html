@@ -17,7 +17,7 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=bedroom4-pgsr-tsdf-native-backface-cdn-20260715" />
+    <link rel="stylesheet" href="./styles.css?v=bedroom4-pgsr-tsdf-doorway-camera-20260716" />
   </head>
   <body>
     <canvas id="sceneCanvas" tabindex="0" aria-label="PGSR 3DGS visual layer with TSDF mesh collider proxy"></canvas>
@@ -78,6 +78,7 @@
           <button id="resetView" type="button">Reset View</button>
         </div>
         <div class="control-row camera-preset-row" aria-label="Camera preset controls">
+          <button data-camera-preset="doorway" type="button">Doorway</button>
           <button data-camera-preset="front" type="button">Front</button>
           <button data-camera-preset="back" type="button">Back</button>
           <button data-camera-preset="left" type="button">Left</button>
@@ -92,6 +93,8 @@
           <button data-camera-orbit="down" type="button">View ↓</button>
           <button data-camera-orbit="in" type="button">Zoom In</button>
           <button data-camera-orbit="out" type="button">Zoom Out</button>
+          <button data-camera-orbit="advance" type="button">Move In</button>
+          <button data-camera-orbit="retreat" type="button">Move Out</button>
         </div>
         <div class="control-row robot-step-row" aria-label="Robot step controls">
           <button data-robot-step="left" type="button">←</button>
@@ -125,6 +128,6 @@
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./visual-physics-proxy.js?v=bedroom4-pgsr-tsdf-native-backface-cdn-20260715"></script>
+    <script type="module" src="./visual-physics-proxy.js?v=bedroom4-pgsr-tsdf-doorway-camera-20260716"></script>
   </body>
 </html>
