@@ -1,7 +1,31 @@
 {
-  "version": "bedroom4-pgsr-tsdf-fixed-spawn-bvh-mobilehud-20260716",
+  "version": "bedroom4-pgsr-reference18-collision-bvh-20260716",
   "chunkSize": 1048576,
   "cameraPresets": {
+    "reference": {
+      "id": "pgsr_input_camera_000018",
+      "label": "Reference interior",
+      "sourcePath": "/Users/zhangyuxiang/Desktop/worksplace/Video2Mesh/tmp_remote_results/holi_spatial_bedroom4_fresh_da3_sam3_pgsr_20260714_184217/pgsr_scannetppv2_all/bedroom_4/cameras.json",
+      "sourceFrame": "000018",
+      "coordinateFrame": "visual_native",
+      "eye": [
+        -1.62950243820192,
+        1.818849050201853,
+        -2.5396998253837135
+      ],
+      "forward": [
+        0.31380919609254937,
+        0.005869813544282999,
+        0.9494679394693233
+      ],
+      "up": [
+        -0.027003895871585824,
+        0.9996315591734393,
+        0.0027451343575030564
+      ],
+      "targetDistance": 6,
+      "verticalFovDeg": 55.776917
+    },
     "doorway": {
       "id": "pgsr_input_camera_000000",
       "label": "Doorway entry",
@@ -33,13 +57,13 @@
       -1,
       0
     ],
-    "source": "pgsr_input_camera_000000_image_up"
+    "source": "pgsr_input_camera_000018_image_up"
   },
   "initialState": {
-    "cameraPreset": "doorway",
+    "cameraPreset": "reference",
     "robotObstacleCollision": true,
     "robotSpawn": {
-      "id": "fixed-user-approved-doorway-20260716",
+      "id": "fixed-user-approved-interior-20260716",
       "coordinateFrame": "visual_native",
       "groundPoint": [
         5.968559,
@@ -47,9 +71,9 @@
         7.851893
       ],
       "forward": [
-        0.21489584373036277,
+        0.31380919609254937,
         0,
-        0.976636482087327
+        0.9494679394693233
       ]
     }
   },

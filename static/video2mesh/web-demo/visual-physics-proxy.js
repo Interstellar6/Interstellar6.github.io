@@ -4,7 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 import { acceleratedRaycast, MeshBVH, SAH } from "three-mesh-bvh";
 
-const ASSET_VERSION = "bedroom4-pgsr-tsdf-fixed-spawn-bvh-mobilehud-20260716";
+const ASSET_VERSION = "bedroom4-pgsr-reference18-collision-bvh-20260716";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 // Immutable mirrors of the exact chunk hashes referenced by this deployment.
 const ASSET_FETCH_SOURCES = [
@@ -31,8 +31,9 @@ const CAMERA_WHEEL_ZOOM_SENSITIVITY = 0.00165;
 const CAMERA_DRAG_ZOOM_SENSITIVITY = 0.012;
 const CAMERA_MIN_POLAR = 0.035;
 const CAMERA_MAX_POLAR = Math.PI - 0.035;
-const CAMERA_PRESETS = ["doorway", "front", "back", "left", "right", "top", "robot"];
+const CAMERA_PRESETS = ["reference", "doorway", "front", "back", "left", "right", "top", "robot"];
 const CAMERA_PRESET_LABELS = {
+  reference: "Reference interior",
   doorway: "Doorway entry",
   front: "Interior front",
   back: "Interior back",
@@ -143,7 +144,7 @@ const state = {
   colliderRenderMode: "hidden",
   semanticColor: true,
   cameraMode: "orbit",
-  cameraPreset: "doorway",
+  cameraPreset: "reference",
   cameraPresetSource: "pending",
   worldUp: { x: 0, y: 1, z: 0 },
   cameraControlVersion: CAMERA_CONTROL_VERSION,
@@ -744,7 +745,7 @@ function buildManualVisualTransform(patch = {}) {
 }
 
 function exposeDebugApi() {
-  window.__setCameraPreset = (preset = "doorway") => {
+  window.__setCameraPreset = (preset = "reference") => {
     setCameraOrbitView(preset, { announce: false, immediate: true });
     return syncDebugState();
   };
@@ -1873,7 +1874,7 @@ function recordedCameraPreset(presetId) {
 function cameraPresetVectors(preset, bounds) {
   const size = boxSize(bounds);
   const roomMax = Math.max(size.x, size.y, size.z, 1);
-  let presetId = CAMERA_PRESETS.includes(preset) ? preset : "doorway";
+  let presetId = CAMERA_PRESETS.includes(preset) ? preset : "reference";
   const recorded = recordedCameraPreset(presetId);
   if (recorded) return { ...recorded, size, roomMax, presetId };
   if (presetId === "doorway") presetId = "back";
@@ -1926,7 +1927,7 @@ function cameraPresetVectors(preset, bounds) {
   };
 }
 
-function setCameraOrbitView(preset = "doorway", { announce = false, immediate = false } = {}) {
+function setCameraOrbitView(preset = "reference", { announce = false, immediate = false } = {}) {
   const bounds = transformedVisualBounds || colliderBounds;
   if (!bounds || bounds.isEmpty()) return;
   const { eye, target, roomMax, presetId, fovDeg, source, up } = cameraPresetVectors(preset, bounds);
@@ -1949,7 +1950,7 @@ function setCameraOrbitView(preset = "doorway", { announce = false, immediate = 
 
 function frameCameraToInterior({ announce = false } = {}) {
   const nextPreset = announce ? nextValue(CAMERA_PRESETS, state.cameraPreset) : state.cameraPreset;
-  setCameraOrbitView(nextPreset || "doorway", { announce });
+  setCameraOrbitView(nextPreset || "reference", { announce });
 }
 
 function updateAdaptiveQuality(fps) {
@@ -2405,10 +2406,10 @@ function bindEvents() {
   document.querySelector("#respawnRobot").addEventListener("click", () => {
     spawnRobotAtBounds();
     setLayerVisibility();
-    showToast("Robot returned to the fixed doorway spawn.");
+    showToast("Robot returned to the fixed interior spawn.");
   });
   document.querySelector("#resetView").addEventListener("click", () => {
-    const initialPreset = manifest?.initialState?.cameraPreset || "doorway";
+    const initialPreset = manifest?.initialState?.cameraPreset || "reference";
     setCameraOrbitView(initialPreset, { announce: true, immediate: true });
   });
   document.querySelectorAll("[data-robot-step]").forEach((button) => {

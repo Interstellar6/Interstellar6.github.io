@@ -203,7 +203,7 @@ function buildAsset({ filePath, prefix, tempChunkDir, chunkSize, manifestFields 
   };
 }
 
-function readCameraPreset(filePath, frameName) {
+function readCameraPreset(filePath, frameName, label) {
   const cameras = JSON.parse(fs.readFileSync(filePath, "utf8"));
   if (!Array.isArray(cameras)) throw new Error(`${filePath}: expected a camera array`);
   const camera = cameras.find((entry) => String(entry.img_name) === String(frameName));
@@ -222,7 +222,7 @@ function readCameraPreset(filePath, frameName) {
   const verticalFovDeg = 2 * Math.atan(Number(camera.height) / (2 * Number(camera.fy))) * 180 / Math.PI;
   return {
     id: `pgsr_input_camera_${frameName}`,
-    label: "Doorway entry",
+    label,
     sourcePath: filePath,
     sourceFrame: String(frameName),
     coordinateFrame: "visual_native",
@@ -262,6 +262,7 @@ const version = requireOption(options, "version");
 const inferredCamerasPath = path.resolve(path.dirname(visualPath), "../..", "cameras.json");
 const camerasPath = path.resolve(options.cameras || inferredCamerasPath);
 const doorwayFrame = options["doorway-frame"] || "000000";
+const referenceFrame = options["reference-frame"] || "000018";
 const chunkSize = Number(options["chunk-size"] || DEFAULT_CHUNK_SIZE);
 if (!Number.isInteger(chunkSize) || chunkSize <= 0) throw new Error("--chunk-size must be a positive integer");
 
@@ -273,20 +274,21 @@ fs.mkdirSync(tempChunkDir, { recursive: true });
 
 try {
   const cameraPresets = {
-    doorway: readCameraPreset(camerasPath, doorwayFrame),
+    reference: readCameraPreset(camerasPath, referenceFrame, "Reference interior"),
+    doorway: readCameraPreset(camerasPath, doorwayFrame, "Doorway entry"),
   };
   const coordinateSystem = {
-    worldUp: dominantWorldUp(cameraPresets.doorway),
-    source: `${cameraPresets.doorway.id}_image_up`,
+    worldUp: dominantWorldUp(cameraPresets.reference),
+    source: `${cameraPresets.reference.id}_image_up`,
   };
   const initialState = {
-    cameraPreset: "doorway",
+    cameraPreset: "reference",
     robotObstacleCollision: true,
     robotSpawn: {
-      id: "fixed-user-approved-doorway-20260716",
+      id: "fixed-user-approved-interior-20260716",
       coordinateFrame: "visual_native",
       groundPoint: [5.968559, 6.051313, 7.851893],
-      forward: [0.21489584373036277, 0, 0.976636482087327],
+      forward: [cameraPresets.reference.forward[0], 0, cameraPresets.reference.forward[2]],
     },
   };
   const visual = buildAsset({
