@@ -1,5 +1,5 @@
 {
-  "version": "bedroom4-pgsr-tsdf-doorway-camera-20260716",
+  "version": "bedroom4-pgsr-tsdf-fixed-spawn-bvh-mobilehud-20260716",
   "chunkSize": 1048576,
   "cameraPresets": {
     "doorway": {
@@ -34,6 +34,24 @@
       0
     ],
     "source": "pgsr_input_camera_000000_image_up"
+  },
+  "initialState": {
+    "cameraPreset": "doorway",
+    "robotObstacleCollision": true,
+    "robotSpawn": {
+      "id": "fixed-user-approved-doorway-20260716",
+      "coordinateFrame": "visual_native",
+      "groundPoint": [
+        5.968559,
+        6.051313,
+        7.851893
+      ],
+      "forward": [
+        0.21489584373036277,
+        0,
+        0.976636482087327
+      ]
+    }
   },
   "alignment": {
     "id": "pgsr_native_shared_frame_20260714",

@@ -456,10 +456,16 @@ button:disabled {
   }
 
   .hud {
+    top: 64px;
     left: 12px;
     right: 12px;
     bottom: 12px;
     grid-template-columns: 1fr;
+    align-content: start;
+    max-height: calc(100dvh - 76px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: auto;
   }
 
   .status-card h1 {

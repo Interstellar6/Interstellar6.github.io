@@ -2,8 +2,9 @@ import * as THREE from "three";
 import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
+import { acceleratedRaycast, MeshBVH, SAH } from "three-mesh-bvh";
 
-const ASSET_VERSION = "bedroom4-pgsr-tsdf-doorway-camera-20260716";
+const ASSET_VERSION = "bedroom4-pgsr-tsdf-fixed-spawn-bvh-mobilehud-20260716";
 const MANIFEST_URL = `./assets/web-demo-assets.json?v=${ASSET_VERSION}`;
 // Immutable mirrors of the exact chunk hashes referenced by this deployment.
 const ASSET_FETCH_SOURCES = [
@@ -169,6 +170,7 @@ const state = {
   colliderSha256: "",
   colliderSourcePath: "",
   colliderHasSemantics: false,
+  colliderAcceleration: "pending",
   transformSource: "pending",
   transformScale: 1,
   transformTranslation: { x: 0, y: 0, z: 0 },
@@ -192,7 +194,7 @@ const state = {
   robotFollowCamera: false,
   robotGrounded: false,
   robotBlocked: false,
-  robotObstacleCollision: false,
+  robotObstacleCollision: true,
   robotSpawnSource: "pending",
   robotFloorYEstimate: null,
   robotPosition: { x: 0, y: 0, z: 0 },
@@ -943,7 +945,7 @@ function updateHud() {
     ? (state.lastHitInfo.objectId == null ? "n/a" : `id ${state.lastHitInfo.objectId}`)
     : "none";
   robotMetric.textContent = state.robotReady
-    ? (state.robotGrounded ? `${state.robotSpeed.toFixed(1)} m/s` : "air")
+    ? (state.robotBlocked ? "blocked" : state.robotGrounded ? `${state.robotSpeed.toFixed(1)} m/s` : "air")
     : "loading";
   modeChip.textContent = [
     state.visualReady ? "PGSR Gaussian PLY visual ready" : "loading visual PLY",
@@ -956,6 +958,7 @@ function updateHud() {
       ? `manual offset ${state.manualAlignmentOffset.x.toFixed(2)}/${state.manualAlignmentOffset.y.toFixed(2)}/${state.manualAlignmentOffset.z.toFixed(2)} yaw ${state.manualAlignmentRotationDeg.y.toFixed(1)}`
       : (state.transformSource.includes("viewer_default") ? "bbox-center viewer correction" : "manifest alignment"),
     `${COLLIDER_LABELS[state.colliderRenderMode]} collider`,
+    state.colliderAcceleration,
     `${CAMERA_PRESET_LABELS[state.cameraPreset] || state.cameraPreset} ${state.cameraMode} camera`,
     `${QUALITY_LABELS[state.qualityMode]} dpr ${state.actualPixelRatio}`,
     state.robotEnabled ? `robot ${state.robotObstacleCollision ? "collides with mesh" : "ground-only"} ${state.robotSpawnSource}` : "robot hidden",
@@ -977,6 +980,13 @@ async function loadManifest() {
   }
   state.worldUp = roundedVector(ROBOT_UP);
   camera.up.copy(ROBOT_UP);
+  const initialState = manifest.initialState || {};
+  if (manifest.cameraPresets?.[initialState.cameraPreset]) {
+    state.cameraPreset = initialState.cameraPreset;
+  }
+  if (typeof initialState.robotObstacleCollision === "boolean") {
+    state.robotObstacleCollision = initialState.robotObstacleCollision;
+  }
   return manifest;
 }
 
@@ -1295,6 +1305,12 @@ async function loadColliderMesh() {
   state.robotFloorYEstimate = Number.isFinite(robotFloorYEstimate)
     ? Number(robotFloorYEstimate.toFixed(3))
     : null;
+  parsed.geometry.boundsTree = new MeshBVH(parsed.geometry, {
+    strategy: SAH,
+    indirect: true,
+    maxLeafTris: 12,
+  });
+  state.colliderAcceleration = "three-mesh-bvh 0.8.3";
 
   const material = new THREE.MeshStandardMaterial({
     vertexColors: parsed.geometry.hasAttribute("color"),
@@ -1312,6 +1328,7 @@ async function loadColliderMesh() {
   colliderMesh.userData.walkable = true;
   colliderMesh.userData.characterCollision = true;
   colliderMesh.userData.cameraCollision = true;
+  colliderMesh.raycast = acceleratedRaycast;
   colliderLayer.add(colliderMesh);
 
   colliderWire = new THREE.LineSegments(
@@ -1563,7 +1580,7 @@ function findGroundForStep(fromPosition, move, distance) {
   return null;
 }
 
-function respawnRobotAt(point, source = "manual") {
+function respawnRobotAt(point, source = "manual", { yaw = null } = {}) {
   if (!colliderMesh) return false;
   if (!robotGroup) {
     robotGroup = createRobot();
@@ -1572,11 +1589,14 @@ function respawnRobotAt(point, source = "manual") {
   const spawn = point.clone();
   spawn.addScaledVector(ROBOT_UP, robotGroup.userData.groundOffset);
   robotGroup.position.copy(spawn);
-  robotGroup.rotation.y = Math.atan2(camera.position.x - spawn.x, camera.position.z - spawn.z);
+  robotGroup.rotation.y = Number.isFinite(yaw)
+    ? yaw
+    : Math.atan2(camera.position.x - spawn.x, camera.position.z - spawn.z);
   robotGroundY = spawn.y;
 
   state.robotReady = true;
   state.robotGrounded = true;
+  state.robotBlocked = false;
   state.robotSpawnSource = source;
   state.robotPosition = roundedVector(robotGroup.position);
   state.robotYaw = Number(robotGroup.rotation.y.toFixed(4));
@@ -1614,11 +1634,37 @@ function findRobotSpawnHit() {
   return scoredHits[0]?.hit || null;
 }
 
+function fixedRobotSpawnFromManifest() {
+  const config = manifest?.initialState?.robotSpawn;
+  if (!config || config.coordinateFrame !== "visual_native" || !baseVisualTransform) return null;
+  if (!Array.isArray(config.groundPoint) || config.groundPoint.length !== 3) return null;
+  const transform = applyScenePresentationToVisualTransform(baseVisualTransform);
+  const point = transformVisualPoint(vectorFromArray(config.groundPoint), transform);
+  const nativeForward = vectorFromArray(config.forward);
+  let yaw = null;
+  if (nativeForward.lengthSq() > 1e-8) {
+    const forward = transformVisualDirection(nativeForward, transform);
+    forward.y = 0;
+    if (forward.lengthSq() > 1e-8) yaw = Math.atan2(forward.x, forward.z);
+  }
+  return {
+    point,
+    yaw,
+    source: config.id || "manifest-fixed",
+  };
+}
+
 function spawnRobotAtBounds() {
   if (!colliderMesh || !colliderBounds) return;
   if (!robotGroup) {
     robotGroup = createRobot();
     robotLayer.add(robotGroup);
+  }
+
+  const fixedSpawn = fixedRobotSpawnFromManifest();
+  if (fixedSpawn) {
+    respawnRobotAt(fixedSpawn.point, fixedSpawn.source, { yaw: fixedSpawn.yaw });
+    return;
   }
 
   const spawnHit = findRobotSpawnHit();
@@ -1742,7 +1788,6 @@ function updateRobot(dt) {
   const move = getRobotMoveVector();
   const isMoving = move.lengthSq() > 0;
   const speed = (keyState.has("ShiftLeft") || keyState.has("ShiftRight")) ? 4.8 : 2.35;
-  state.robotBlocked = false;
   state.robotSpeed = isMoving ? speed : 0;
 
   if (isMoving) {
@@ -1918,43 +1963,6 @@ function updateAdaptiveQuality(fps) {
   if (fps > 48 && current < ceiling - 0.06) {
     applyRendererPixelRatio(Math.min(ceiling, current + 0.06), { forceResize: true });
   }
-}
-
-function frameCameraToBounds(bounds, force = false) {
-  if (!bounds || bounds.isEmpty()) return;
-  const center = boxCenter(bounds);
-  const size = boxSize(bounds);
-  const radius = Math.max(size.x, size.y, size.z, 1);
-  const distance = radius * 0.95;
-  const eye = center.clone().add(new THREE.Vector3(distance * 0.72, distance * 0.44, distance * 0.82));
-  camera.near = Math.max(0.02, radius / 1200);
-  camera.far = Math.max(220, radius * 12);
-  camera.fov = DEFAULT_CAMERA_FOV_DEG;
-  camera.up.copy(ROBOT_UP);
-  camera.updateProjectionMatrix();
-  controls.maxDistance = Math.max(80, radius * 5);
-  setSmoothCameraPose(eye, center, { immediate: false });
-  state.robotFollowCamera = false;
-  state.cameraMode = "orbit";
-  state.cameraPreset = "overview";
-  state.cameraPresetSource = "collider-bounds";
-  setLayerVisibility();
-  if (force) showToast("View reset to collider/visual proxy bounds.");
-}
-
-function respawnRobotAtCurrentViewTarget() {
-  const hit = groundProbe(controls.target, { preferFloor: true });
-  if (hit && respawnRobotAt(hit.point, "view-target")) {
-    showToast("Robot respawned near current view target.");
-    return true;
-  }
-  const spawnHit = findRobotSpawnHit();
-  if (spawnHit && respawnRobotAt(spawnHit.point, "auto-floor")) {
-    showToast("Robot respawned on estimated room floor.");
-    return true;
-  }
-  showToast("No walkable collider point found for robot respawn.");
-  return false;
 }
 
 function markHit(point, normal) {
@@ -2361,6 +2369,7 @@ function bindEvents() {
   });
   document.querySelector("#toggleRobotCollision").addEventListener("click", () => {
     state.robotObstacleCollision = !state.robotObstacleCollision;
+    state.robotBlocked = false;
     setLayerVisibility();
     showToast(state.robotObstacleCollision ? "Robot obstacle rays enabled." : "Robot uses ground-only movement.");
   });
@@ -2394,16 +2403,13 @@ function bindEvents() {
     });
   });
   document.querySelector("#respawnRobot").addEventListener("click", () => {
-    respawnRobotAtCurrentViewTarget();
+    spawnRobotAtBounds();
     setLayerVisibility();
+    showToast("Robot returned to the fixed doorway spawn.");
   });
   document.querySelector("#resetView").addEventListener("click", () => {
-    if (state.robotEnabled && state.robotFollowCamera && robotGroup && state.cameraMode === "orbit") {
-      updateRobotFollowCamera(0, true);
-      showToast("View reset to robot follow camera.");
-      return;
-    }
-    frameCameraToBounds(colliderBounds, true);
+    const initialPreset = manifest?.initialState?.cameraPreset || "doorway";
+    setCameraOrbitView(initialPreset, { announce: true, immediate: true });
   });
   document.querySelectorAll("[data-robot-step]").forEach((button) => {
     button.addEventListener("click", () => stepRobotByCamera(button.dataset.robotStep));

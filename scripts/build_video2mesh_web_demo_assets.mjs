@@ -279,6 +279,16 @@ try {
     worldUp: dominantWorldUp(cameraPresets.doorway),
     source: `${cameraPresets.doorway.id}_image_up`,
   };
+  const initialState = {
+    cameraPreset: "doorway",
+    robotObstacleCollision: true,
+    robotSpawn: {
+      id: "fixed-user-approved-doorway-20260716",
+      coordinateFrame: "visual_native",
+      groundPoint: [5.968559, 6.051313, 7.851893],
+      forward: [0.21489584373036277, 0, 0.976636482087327],
+    },
+  };
   const visual = buildAsset({
     filePath: visualPath,
     prefix: "visual_bedroom_4_pgsr_iteration_30000_point_cloud_ply",
@@ -315,6 +325,7 @@ try {
     chunkSize,
     cameraPresets,
     coordinateSystem,
+    initialState,
     alignment: {
       id: "pgsr_native_shared_frame_20260714",
       method: "identity_same_pgsr_coordinate_frame",

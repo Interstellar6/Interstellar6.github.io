@@ -13,11 +13,12 @@
         "imports": {
           "three": "./vendor/three/build/three.module.js",
           "three/addons/": "./vendor/three/examples/jsm/",
-          "@sparkjsdev/spark": "./vendor/spark.module.js"
+          "@sparkjsdev/spark": "./vendor/spark.module.js",
+          "three-mesh-bvh": "./vendor/three-mesh-bvh/index.module.js"
         }
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=bedroom4-pgsr-tsdf-doorway-camera-20260716" />
+    <link rel="stylesheet" href="./styles.css?v=bedroom4-pgsr-tsdf-fixed-spawn-bvh-mobilehud-20260716" />
   </head>
   <body>
     <canvas id="sceneCanvas" tabindex="0" aria-label="PGSR 3DGS visual layer with TSDF mesh collider proxy"></canvas>
@@ -69,7 +70,7 @@
           <button id="toggleCameraMode" type="button">Orbit Camera</button>
           <button id="toggleRobot" class="is-active" type="button">Robot</button>
           <button id="toggleRobotFollow" type="button">Follow Off</button>
-          <button id="toggleRobotCollision" type="button">Collision Off</button>
+          <button id="toggleRobotCollision" class="is-active" type="button">Collision On</button>
           <button id="toggleQuality" type="button">Balanced</button>
         </div>
         <div class="control-row">
@@ -121,13 +122,13 @@
         <div class="legend">
           <span><i class="swatch visual"></i> PGSR Gaussian PLY：Spark 3DGS renderer，关闭视觉层 raycast</span>
           <span><i class="swatch mesh"></i> TSDF mesh PLY：Mesh collider proxy，保留原始顶点色；当前资产不含语义字段</span>
-          <span><i class="swatch robot"></i> 小机器人：默认只依赖 mesh 地面探测，Shift+单击 collider 可重生</span>
+          <span><i class="swatch robot"></i> 小机器人：默认启用 mesh 地面与障碍碰撞，Shift+单击 collider 可重生</span>
           <span><i class="swatch ray"></i> 首屏背面呈现是 viewer 级同步 yaw 180°，3DGS 与 TSDF mesh 使用 PGSR 原生 identity 配准</span>
         </div>
       </div>
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./visual-physics-proxy.js?v=bedroom4-pgsr-tsdf-doorway-camera-20260716"></script>
+    <script type="module" src="./visual-physics-proxy.js?v=bedroom4-pgsr-tsdf-fixed-spawn-bvh-mobilehud-20260716"></script>
   </body>
 </html>
