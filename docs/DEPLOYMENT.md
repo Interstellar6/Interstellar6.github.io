@@ -38,6 +38,7 @@ python3 scripts/hash_access_passcode.py --salt "<same-salt>" --passcode "another
 npx wrangler secret put RELUMEOW_ACCESS_SALT
 npx wrangler secret put RELUMEOW_ACCESS_TOKEN_SECRET
 npx wrangler secret put RELUMEOW_ACCESS_VIDEO2MESH_HASH
+npx wrangler secret put RELUMEOW_ACCESS_VIDEO2WORLD_HASH
 npx wrangler secret put RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH
 npx wrangler secret put RELUMEOW_ADMIN_USERNAME
 npx wrangler secret put RELUMEOW_ADMIN_PASSWORD_HASH
@@ -80,5 +81,5 @@ Cloudflare 文档要求敏感值使用 secrets；`wrangler secret put` 会创建
 
 这样做有两个边界：
 
-- GitHub Pages 负责让 `relumeow.top/home/`、`/login/`、`/admin/`、`/video2mesh/`、`/challengecup-agent-system/` 这些公共壳可访问。
+- GitHub Pages 负责让 `relumeow.top/home/`、`/login/`、`/admin/`、`/video2mesh/`、`/video2world/`、`/challengecup-agent-system/` 这些公共壳可访问。
 - 受保护项目的 Markdown 正文、图片和目录树必须使用 Cloudflare Worker 或其它后台 API 承载；不要把 `_site/_protected/` 部署到纯静态 Pages。

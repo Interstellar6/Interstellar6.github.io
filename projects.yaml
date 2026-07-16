@@ -84,6 +84,84 @@ projects:
         tags: [进度目录, Weekly]
         query: weekly
 
+  - slug: video2world
+    route: /video2world/
+    title: Video2World
+    brand: Video2World
+    mark: V2W
+    subtitle: Interactive Gaussian Worlds
+    description: 从扫描视频构建分层、可交互、可查询 3D 世界的 Pipeline、资产合同与真实运行记录。
+    access:
+      mode: public
+      realm: video2world
+      label: Video2World 项目空间
+    demo:
+      href: /video2world/web-demo/
+      label: Web Demo
+    build:
+      demo:
+        source: ../video2world/dist/web
+        rewrite_root_asset_urls: true
+        default_manifest: worlds/bedroom4/manifest.json
+        exclude:
+          - "*.map"
+          - test-fixtures
+          - worlds/*/qa
+    source:
+      repo: ../video2world
+      docs_root: docs/video2world
+    navigation:
+      directory_overview: overview.md
+      hide_overview_from_child_list: true
+      directory_order:
+        - project-docs
+        - research-catalog
+        - progress
+      directory_labels:
+        project-docs: 项目文档
+        research-catalog: 调研与架构
+        progress: 真实运行与 QA
+    pinned_docs:
+      - README.md
+      - project-docs/pipeline.md
+      - project-docs/getting-started.md
+      - research-catalog/architecture.md
+      - progress/bedroom4-20260716.md
+    catalog:
+      category: 调研目录
+      root: research-catalog/
+      stages:
+        - key: scene-reconstruction
+          title: 场景重建
+          summary: DA3 几何先验、PGSR 30k Gaussian 与 TSDF scene mesh 的职责和真实统计。
+          image: assets/uploaded/video2world-video2world-project-pipeline/01-pgsr-scene.png
+          tags: [DA3, PGSR, 3DGS, TSDF]
+        - key: semantic-lifting
+          title: 开放词汇语义与 3D Fusion
+          summary: SAM3 二维证据、多视角概率回投、对象点云、bbox 与 semantic Gaussian。
+          image: assets/uploaded/video2world-video2world-project-pipeline/06-semantic-gaussian.png
+          tags: [SAM3, Open Vocabulary, Semantic 3DGS]
+        - key: object-completion
+          title: 独立物体补全
+          summary: EmbodiedGen V2/TRELLIS object Gaussian、GLB/OBJ、场景对齐和碰撞门禁。
+          image: assets/uploaded/video2world-video2world-project-pipeline/08-plant-gaussian.png
+          tags: [EmbodiedGen V2, TRELLIS, GLB]
+        - key: interactive-runtime
+          title: 可交互 Web 世界
+          summary: Spark 视觉层、MeshBVH 碰撞层、机器人、对象旋转与场景认知问答。
+          image: assets/uploaded/video2world-video2world-project-pipeline/13-web-production-overview.png
+          tags: [Spark, Three.js, MeshBVH, Scene QA]
+    reading_paths:
+      - title: 十阶段 Pipeline
+        tags: [Pipeline, 3DGS, SAM3]
+        query: Pipeline
+      - title: World Manifest 与门禁
+        tags: [Schema, Provenance, Quality Gates]
+        query: manifest
+      - title: bedroom_4 实测
+        tags: [bedroom_4, QA, Real Run]
+        query: bedroom_4
+
   - slug: challengecup-agent-system
     route: /challengecup-agent-system/
     title: ChallengeCup Agent System

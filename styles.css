@@ -43,6 +43,7 @@ html[data-theme="light"] {
 }
 
 * { box-sizing: border-box; }
+.project-demo-link[hidden] { display: none; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;

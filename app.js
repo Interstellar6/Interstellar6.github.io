@@ -590,8 +590,17 @@
     els.loginView.hidden = view !== "login";
     els.adminView.hidden = view !== "admin";
     if (els.projectDemoLink) {
-      const showDemoLink = view === "project" && project?.slug === "video2mesh" && accessState.allowed;
+      const configuredDemo = project?.demo || (
+        project?.slug === "video2mesh"
+          ? { href: "/video2mesh/web-demo/", label: "Web Demo" }
+          : null
+      );
+      const showDemoLink = view === "project" && Boolean(configuredDemo?.href) && accessState.allowed;
       els.projectDemoLink.hidden = !showDemoLink;
+      if (showDemoLink) {
+        els.projectDemoLink.href = configuredDemo.href;
+        els.projectDemoLink.textContent = configuredDemo.label || "Web Demo";
+      }
     }
   }
 

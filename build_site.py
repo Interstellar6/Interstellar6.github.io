@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import json
 import hashlib
+import copy
 import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -177,13 +179,23 @@ def access_realm(project: dict[str, Any]) -> str:
 
 
 def public_project(project: dict[str, Any]) -> dict[str, Any]:
-    public = dict(project)
+    public = copy.deepcopy(project)
     public.pop("source", None)
+    public.pop("build", None)
+    demo = project.get("demo")
+    if isinstance(demo, dict) and demo.get("href"):
+        public["demo"] = {
+            key: str(demo[key])
+            for key in ("href", "label")
+            if demo.get(key) is not None
+        }
+    else:
+        public.pop("demo", None)
     return public
 
 
 def shell_project(project: dict[str, Any]) -> dict[str, Any]:
-    return {
+    seed = {
         "slug": project["slug"],
         "route": project["route"],
         "title": project["title"],
@@ -196,6 +208,10 @@ def shell_project(project: dict[str, Any]) -> dict[str, Any]:
         "updated": project.get("updated", ""),
         "overview_id": project.get("overview_id", ""),
     }
+    demo = public_project(project).get("demo")
+    if demo:
+        seed["demo"] = demo
+    return seed
 
 
 def source_repo_for_project(project: dict[str, Any]) -> Path:
@@ -550,6 +566,181 @@ def copytree_merge(src: Path, dst: Path) -> None:
             shutil.copy2(item, target)
 
 
+def demo_exclude_patterns(project: dict[str, Any]) -> list[str]:
+    raw_patterns = demo_build_config(project).get("exclude", [])
+    if raw_patterns is None:
+        return []
+    if not isinstance(raw_patterns, list):
+        raise ValueError(f"demo exclude must be a list for {project['slug']}")
+    patterns: list[str] = []
+    for raw in raw_patterns:
+        pattern = str(raw or "").strip().replace("\\", "/")
+        path = PurePosixPath(pattern)
+        if not pattern or path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"invalid demo exclude pattern for {project['slug']}: {raw!r}")
+        patterns.append(pattern)
+    return patterns
+
+
+def demo_path_is_excluded(relative: Path, patterns: list[str]) -> bool:
+    candidate = PurePosixPath(relative.as_posix())
+    ancestors = [candidate, *candidate.parents]
+    return any(
+        ancestor != PurePosixPath(".") and ancestor.match(pattern)
+        for pattern in patterns
+        for ancestor in ancestors
+    )
+
+
+def copytree_merge_filtered(src: Path, dst: Path, exclude_patterns: list[str]) -> None:
+    for item in src.rglob("*"):
+        relative = item.relative_to(src)
+        if demo_path_is_excluded(relative, exclude_patterns):
+            continue
+        target = dst / relative
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif item.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+
+
+def demo_source_for_project(project: dict[str, Any]) -> Path | None:
+    build = project.get("build")
+    demo_build = build.get("demo") if isinstance(build, dict) else None
+    configured = demo_build.get("source") if isinstance(demo_build, dict) else None
+    env_key = "RELUMEOW_DEMO_SOURCE_" + re.sub(
+        r"[^A-Z0-9]+", "_", str(project["slug"]).upper()
+    ).strip("_")
+    raw = os.environ.get(env_key) or configured
+    if not raw:
+        return None
+    source = Path(str(raw)).expanduser()
+    return source.resolve() if source.is_absolute() else (ROOT / source).resolve()
+
+
+def demo_build_config(project: dict[str, Any]) -> dict[str, Any]:
+    build = project.get("build")
+    demo_build = build.get("demo") if isinstance(build, dict) else None
+    return demo_build if isinstance(demo_build, dict) else {}
+
+
+def relative_demo_path(value: Any, field: str) -> Path:
+    raw = str(value or "").strip()
+    path = PurePosixPath(raw)
+    if (
+        not raw
+        or path.is_absolute()
+        or any(part in {".", ".."} for part in path.parts)
+        or any(not re.fullmatch(r"[A-Za-z0-9._-]+", part) for part in path.parts)
+    ):
+        raise ValueError(f"demo {field} must be a relative path without traversal: {raw!r}")
+    return Path(*path.parts)
+
+
+def demo_target_for_project(project: dict[str, Any], build_dir: Path = BUILD_DIR) -> Path:
+    demo = project.get("demo")
+    href = str(demo.get("href") or "") if isinstance(demo, dict) else ""
+    parsed = urlsplit(href)
+    if (
+        not href.startswith("/")
+        or parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or "%" in parsed.path
+    ):
+        raise ValueError(f"invalid local demo href for {project['slug']}: {href!r}")
+
+    raw_parts = parsed.path.split("/")
+    if any(part in {".", ".."} for part in raw_parts):
+        raise ValueError(f"demo href cannot traverse directories: {href!r}")
+    href_parts = PurePosixPath(parsed.path).parts[1:]
+    route_parts = PurePosixPath("/" + str(project["route"]).strip("/")).parts[1:]
+    if href_parts[: len(route_parts)] != route_parts or len(href_parts) <= len(route_parts):
+        raise ValueError(
+            f"demo href must be nested under project route {project['route']!r}: {href!r}"
+        )
+    return build_dir.joinpath(*href_parts)
+
+
+def materialize_project_demo(project: dict[str, Any], build_dir: Path = BUILD_DIR) -> bool:
+    source = demo_source_for_project(project)
+    if source is None:
+        return True
+    if not source.is_dir():
+        return False
+    target = demo_target_for_project(project, build_dir)
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
+    copytree_merge_filtered(source, target, demo_exclude_patterns(project))
+    configure_demo_entrypoint(project, target)
+    return True
+
+
+def configure_demo_entrypoint(project: dict[str, Any], target: Path) -> None:
+    config = demo_build_config(project)
+    entrypoint = target / relative_demo_path(config.get("entrypoint", "index.html"), "entrypoint")
+    if not entrypoint.is_file():
+        raise FileNotFoundError(f"demo entrypoint not found for {project['slug']}: {entrypoint}")
+
+    html = entrypoint.read_text(encoding="utf-8")
+    if config.get("rewrite_root_asset_urls"):
+        html = re.sub(
+            r"(?P<attribute>\b(?:src|href)=[\"'])/assets/",
+            r"\g<attribute>./assets/",
+            html,
+        )
+
+    default_manifest = config.get("default_manifest")
+    if default_manifest:
+        manifest_relative = relative_demo_path(default_manifest, "default_manifest")
+        manifest = target / manifest_relative
+        if not manifest.is_file():
+            raise FileNotFoundError(
+                f"default demo manifest not found for {project['slug']}: {manifest}"
+            )
+        marker = "relumeow-default-demo-manifest"
+        if marker not in html:
+            manifest_url = "./" + manifest_relative.as_posix()
+            bootstrap = f"""    <script id=\"{marker}\">
+      (() => {{
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has(\"manifest\")) {{
+          url.searchParams.set(\"manifest\", {json.dumps(manifest_url)});
+          window.history.replaceState(window.history.state, \"\", url);
+        }}
+      }})();
+    </script>
+"""
+            if re.search(r"<head(?:\s[^>]*)?>", html, flags=re.IGNORECASE):
+                html = re.sub(
+                    r"(<head(?:\s[^>]*)?>)",
+                    r"\1\n" + bootstrap,
+                    html,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            else:
+                html = bootstrap + html
+
+    entrypoint.write_text(html, encoding="utf-8")
+
+
+def prepare_project_for_build(project: dict[str, Any], build_dir: Path = BUILD_DIR) -> dict[str, Any]:
+    prepared = copy.deepcopy(project)
+    source = demo_source_for_project(prepared)
+    if source is None:
+        return prepared
+    if materialize_project_demo(prepared, build_dir):
+        print(f"  copied {prepared['slug']} demo: {source} -> {demo_target_for_project(prepared, build_dir)}")
+    else:
+        prepared.pop("demo", None)
+        print(f"  skipped {prepared['slug']} demo: source not found at {source}")
+    return prepared
+
+
 def copy_shell_files(target: Path) -> None:
     for name in ("index.html", "app.js", "styles.css", "theme.js"):
         src = ROOT / name
@@ -734,7 +925,8 @@ def main() -> int:
         shutil.rmtree(BUILD_DIR)
     BUILD_DIR.mkdir(parents=True)
     project_payloads = []
-    for project in config.get("projects", []):
+    for configured_project in config.get("projects", []):
+        project = prepare_project_for_build(configured_project)
         if shell_only:
             payload = build_project_shell(project, site_config)
             project_payloads.append(payload)

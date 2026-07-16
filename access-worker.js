@@ -3,6 +3,10 @@ const REALMS = {
     title: "Video2Mesh",
     visitorHashEnv: "RELUMEOW_ACCESS_VIDEO2MESH_HASH",
   },
+  "video2world": {
+    title: "Video2World",
+    visitorHashEnv: "RELUMEOW_ACCESS_VIDEO2WORLD_HASH",
+  },
   "challengecup-agent-system": {
     title: "ChallengeCup Agent System",
     visitorHashEnv: "RELUMEOW_ACCESS_CHALLENGECUP_AGENT_SYSTEM_HASH",
