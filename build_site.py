@@ -638,6 +638,74 @@ def relative_demo_path(value: Any, field: str) -> Path:
     return Path(*path.parts)
 
 
+def manifest_local_file_references(payload: Any) -> list[Path]:
+    references: set[Path] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, str):
+            return
+        raw_path = urlsplit(value).path
+        normalized = raw_path[2:] if raw_path.startswith("./") else raw_path
+        if normalized.startswith("worlds/"):
+            references.add(
+                relative_demo_path(normalized, "manifest local file reference")
+            )
+
+    visit(payload)
+    return sorted(references, key=lambda path: path.as_posix())
+
+
+def validate_manifest_local_file_references(manifest: Path, target: Path) -> Any:
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid demo manifest JSON: {manifest}") from exc
+    missing = [
+        path
+        for path in manifest_local_file_references(payload)
+        if not (target / path).is_file()
+    ]
+    if missing:
+        rendered = ", ".join(path.as_posix() for path in missing)
+        raise FileNotFoundError(
+            f"demo manifest referenced local file was not published: {rendered}"
+        )
+    return payload
+
+
+def validate_demo_file_sizes(project: dict[str, Any], target: Path) -> None:
+    raw_limit = demo_build_config(project).get("max_file_bytes")
+    if raw_limit is None:
+        return
+    if isinstance(raw_limit, bool) or not isinstance(raw_limit, int) or raw_limit <= 0:
+        raise ValueError(
+            f"demo max_file_bytes must be a positive integer for {project['slug']}"
+        )
+    oversized = sorted(
+        (
+            (path.relative_to(target), path.stat().st_size)
+            for path in target.rglob("*")
+            if path.is_file() and path.stat().st_size > raw_limit
+        ),
+        key=lambda item: item[0].as_posix(),
+    )
+    if oversized:
+        rendered = ", ".join(
+            f"{path.as_posix()} ({size} bytes)" for path, size in oversized
+        )
+        raise ValueError(
+            f"demo files exceed max_file_bytes={raw_limit} for {project['slug']}: {rendered}"
+        )
+
+
 def demo_target_for_project(project: dict[str, Any], build_dir: Path = BUILD_DIR) -> Path:
     demo = project.get("demo")
     href = str(demo.get("href") or "") if isinstance(demo, dict) else ""
@@ -676,6 +744,7 @@ def materialize_project_demo(project: dict[str, Any], build_dir: Path = BUILD_DI
     target.mkdir(parents=True, exist_ok=True)
     copytree_merge_filtered(source, target, demo_exclude_patterns(project))
     configure_demo_entrypoint(project, target)
+    validate_demo_file_sizes(project, target)
     return True
 
 
@@ -701,6 +770,26 @@ def configure_demo_entrypoint(project: dict[str, Any], target: Path) -> None:
             raise FileNotFoundError(
                 f"default demo manifest not found for {project['slug']}: {manifest}"
             )
+        manifest_payload = validate_manifest_local_file_references(manifest, target)
+
+        stable_manifest = config.get("stable_manifest")
+        if stable_manifest:
+            stable_relative = relative_demo_path(stable_manifest, "stable_manifest")
+            stable = target / stable_relative
+            if stable_relative == manifest_relative:
+                raise ValueError(
+                    f"stable demo manifest must differ from default for {project['slug']}"
+                )
+            if not stable.is_file():
+                raise FileNotFoundError(
+                    f"stable demo manifest not found for {project['slug']}: {stable}"
+                )
+            stable_payload = validate_manifest_local_file_references(stable, target)
+            if stable_payload == manifest_payload:
+                raise ValueError(
+                    f"stable demo manifest content must differ from default for {project['slug']}"
+                )
+
         marker = "relumeow-default-demo-manifest"
         if marker not in html:
             manifest_url = "./" + manifest_relative.as_posix()

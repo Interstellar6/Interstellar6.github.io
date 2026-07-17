@@ -103,10 +103,20 @@ projects:
         source: ../video2world/dist/web
         rewrite_root_asset_urls: true
         default_manifest: worlds/bedroom4/manifest.json
+        stable_manifest: worlds/bedroom4/manifest.web-demo-baseline-stable.json
+        max_file_bytes: 26214400
         exclude:
           - "*.map"
           - test-fixtures
-          - worlds/*/qa
+          - gaussian-review.html
+          - object-review.html
+          - assets/gaussianReview-*
+          - assets/objectReview-*
+          - assets/object-review-*
+          - worlds/*/qa/screenshots
+          - worlds/*/qa/unified-pillow-browser
+          - worlds/*/recarve-candidates
+          - worlds/bedroom4/colliders/collider_bedroom4_tsdf_static_carved_unified_pillow.ply
     source:
       repo: ../video2world
       docs_root: docs/video2world
@@ -124,6 +134,7 @@ projects:
     pinned_docs:
       - README.md
       - project-docs/pipeline.md
+      - project-docs/completion.md
       - project-docs/getting-started.md
       - research-catalog/architecture.md
       - progress/bedroom4-20260716.md
@@ -152,7 +163,7 @@ projects:
           image: assets/uploaded/video2world-video2world-project-pipeline/13-web-production-overview.png
           tags: [Spark, Three.js, MeshBVH, Scene QA]
     reading_paths:
-      - title: 十阶段 Pipeline
+      - title: 十二阶段 Pipeline
         tags: [Pipeline, 3DGS, SAM3]
         query: Pipeline
       - title: World Manifest 与门禁
