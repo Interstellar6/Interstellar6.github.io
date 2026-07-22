@@ -792,7 +792,8 @@ def configure_demo_entrypoint(project: dict[str, Any], target: Path) -> None:
 
         marker = "relumeow-default-demo-manifest"
         if marker not in html:
-            manifest_url = "./" + manifest_relative.as_posix()
+            manifest_version = hashlib.sha256(manifest.read_bytes()).hexdigest()[:12]
+            manifest_url = f"./{manifest_relative.as_posix()}?v={manifest_version}"
             bootstrap = f"""    <script id=\"{marker}\">
       (() => {{
         const url = new URL(window.location.href);

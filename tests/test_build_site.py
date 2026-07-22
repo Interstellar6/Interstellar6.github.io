@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -188,6 +189,11 @@ class DemoBuildTests(unittest.TestCase):
             self.assertIn('href="./assets/app.css"', html)
             self.assertIn("relumeow-default-demo-manifest", html)
             self.assertIn("./worlds/bedroom4/manifest.json", html)
+            expected_version = hashlib.sha256(b"{}").hexdigest()[:12]
+            self.assertIn(
+                f"./worlds/bedroom4/manifest.json?v={expected_version}",
+                html,
+            )
             self.assertIn("window.history.replaceState", html)
             self.assertLess(
                 html.index("relumeow-default-demo-manifest"),
