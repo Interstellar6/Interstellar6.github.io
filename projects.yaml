@@ -174,7 +174,7 @@ projects:
       realm: challengecup-agent-system
       label: ChallengeCup 项目空间
     source:
-      repo: ../ChallengeCup
+      repo: ../ChallengeCup/test-agent-system
       docs_root: docs/challengecup-agent-system
     navigation:
       directory_overview: overview.md
