@@ -664,7 +664,19 @@ def demo_target_for_project(project: dict[str, Any], build_dir: Path = BUILD_DIR
     return build_dir.joinpath(*href_parts)
 
 
+def demos_disabled() -> bool:
+    """RELUMEOW_SKIP_DEMOS=1 时不打包任何项目 demo。
+
+    用于只更新文档、需要快速部署的场合：web-demo 里的 3D 资产有 GB 级，
+    全量上传又慢又容易在抖动的链路上失败。跳过后 demo 链接会一并隐藏，
+    避免页面上留一个 404 的入口。
+    """
+    return os.environ.get("RELUMEOW_SKIP_DEMOS") == "1"
+
+
 def materialize_project_demo(project: dict[str, Any], build_dir: Path = BUILD_DIR) -> bool:
+    if demos_disabled():
+        return False
     source = demo_source_for_project(project)
     if source is None:
         return True
@@ -737,7 +749,8 @@ def prepare_project_for_build(project: dict[str, Any], build_dir: Path = BUILD_D
         print(f"  copied {prepared['slug']} demo: {source} -> {demo_target_for_project(prepared, build_dir)}")
     else:
         prepared.pop("demo", None)
-        print(f"  skipped {prepared['slug']} demo: source not found at {source}")
+        reason = "RELUMEOW_SKIP_DEMOS=1" if demos_disabled() else f"source not found at {source}"
+        print(f"  skipped {prepared['slug']} demo: {reason}")
     return prepared
 
 
@@ -913,8 +926,27 @@ def build_static_routes(site_config: dict[str, Any], summaries: list[dict[str, A
 
 
 def copy_static_tree() -> None:
-    if STATIC_DIR.exists():
+    if not STATIC_DIR.exists():
+        return
+    if not demos_disabled():
         copytree_merge(STATIC_DIR, BUILD_DIR)
+        return
+    # RELUMEOW_SKIP_DEMOS=1：跳过 static/*/web-demo（demo 资产常有 GB 级，
+    # 只更新文档时不需要跟着上传）。其余静态文件照常合并。
+    skipped = 0
+    copied = 0
+    for path in sorted(STATIC_DIR.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(STATIC_DIR)
+        if "web-demo" in relative.parts:
+            skipped += 1
+            continue
+        target = BUILD_DIR / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        copied += 1
+    print(f"  static: copied {copied} files, skipped {skipped} web-demo files (RELUMEOW_SKIP_DEMOS=1)")
 
 
 def copy_linked_sites(config: dict[str, Any]) -> None:
