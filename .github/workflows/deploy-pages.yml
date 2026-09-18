@@ -22,6 +22,14 @@ jobs:
       - name: Checkout central site
         uses: actions/checkout@v4
 
+      - name: Checkout linked static site (AIIntroduceCourse)
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: Interstellar6/AIIntroduceCourse
+          path: linked/AIIntroduceCourse
+          fetch-depth: 1
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:

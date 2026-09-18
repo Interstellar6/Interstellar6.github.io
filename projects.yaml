@@ -237,3 +237,15 @@ projects:
       - title: 项目使用文档目录
         tags: [项目使用文档目录, How to Run]
         query: 运行
+
+# 挂载在别的仓库里维护的独立静态站点（非 Markdown，原样并入 _site，不做渲染）。
+# 源目录由 CI 额外 checkout 得到；本地没有时构建会跳过，不影响其余内容。
+linked_sites:
+  - route: /AIIntroduceCourse/
+    title: 人工智能导论 · 如何用 AI
+    source: linked/AIIntroduceCourse
+    exclude:
+      - README.md
+      - 备课说明.md
+      - 参考资料
+      - slides

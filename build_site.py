@@ -917,6 +917,55 @@ def copy_static_tree() -> None:
         copytree_merge(STATIC_DIR, BUILD_DIR)
 
 
+def copy_linked_sites(config: dict[str, Any]) -> None:
+    """把在别处维护的独立静态站点按 route 原样并入 _site。
+
+    用于挂载非 Markdown 的站点：整站在自己的仓库里用 HTML/CSS/JS 搭好，
+    这里只负责按 route 原样搬进 _site，不做任何渲染。在 projects.yaml 里声明：
+
+        linked_sites:
+          - route: /AIIntroduceCourse/
+            source: linked/AIIntroduceCourse
+            exclude: [README.md, 参考资料]
+
+    源目录不存在时跳过而不报错，因此本地没有 checkout 也能正常构建；
+    以点开头的文件和目录一律跳过（.git、.nojekyll 等）。
+    """
+    entries = config.get("linked_sites") or []
+    if not entries:
+        return
+    for entry in entries:
+        route = str(entry.get("route") or "").strip("/")
+        source = entry.get("source")
+        if not route or not source:
+            print("- skipped linked site: route 或 source 缺失")
+            continue
+        src = (ROOT / str(source)).resolve()
+        if not src.is_dir():
+            print(f"- skipped linked site {route}: 源目录不存在 ({src})")
+            continue
+        exclude = {
+            str(item).strip("/")
+            for item in (entry.get("exclude") or [])
+            if str(item).strip()
+        }
+        target = BUILD_DIR / route
+        copied = 0
+        for path in sorted(src.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(src)
+            if any(part.startswith(".") for part in relative.parts):
+                continue
+            if relative.parts[0] in exclude:
+                continue
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, destination)
+            copied += 1
+        print(f"- linked {route}: {copied} files from {src}")
+
+
 def main() -> int:
     config = yaml.safe_load(PROJECTS_FILE.read_text(encoding="utf-8"))
     site_config = config.get("site", {})
@@ -940,6 +989,7 @@ def main() -> int:
     build_home(site_config, summaries)
     build_static_routes(site_config, summaries)
     copy_static_tree()
+    copy_linked_sites(config)
     print(f"Built relumeow.top site at {BUILD_DIR}")
     return 0
 
