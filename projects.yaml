@@ -23,7 +23,7 @@ projects:
     subtitle: Field Notes
     description: 从扫描视频到可交互 3D 场景资产的项目文档、技术调研和运行记录。
     access:
-      mode: public
+      mode: passcode
       realm: video2mesh
       label: Video2Mesh 项目空间
     source:
@@ -98,7 +98,7 @@ projects:
     subtitle: Interactive Gaussian Worlds
     description: 从扫描视频构建分层、可交互、可查询 3D 世界的 Pipeline、资产合同与真实运行记录。
     access:
-      mode: public
+      mode: passcode
       realm: video2world
       label: Video2World 项目空间
     demo:
@@ -180,7 +180,7 @@ projects:
       realm: challengecup-agent-system
       label: ChallengeCup 项目空间
     source:
-      repo: ../ChallengeCup/test-agent-system
+      repo: ../ChallengeCup/项目导出
       docs_root: docs/challengecup-agent-system
     navigation:
       directory_overview: overview.md
