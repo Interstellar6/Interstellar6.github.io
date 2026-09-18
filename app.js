@@ -897,6 +897,7 @@
     els.routeLabel.textContent = "relumeow.top";
     els.pageTitle.textContent = "Project spaces";
     const projectTone = (item) => item.slug.includes("challenge") ? "agent" : "mesh";
+    const shortcuts = Array.isArray(site.links) ? site.links.filter((item) => item && item.route) : [];
     const intakeItems = [
       ["new", "新建项目", "初始化项目空间"],
       ["import", "导入项目", "接入仓库文档源"],
@@ -934,14 +935,32 @@
           <article class="home-project home-project--${projectTone(item)}">
             <span class="project-mark large">${escapeHtml(item.mark || item.title.slice(0, 2))}</span>
             <div class="home-project-copy">
-              <h3>${escapeHtml(item.title)}</h3>
+              <div class="home-project-titleline">
+                <h3>${escapeHtml(item.title)}</h3>
+                ${item.subtitle ? `<span class="home-project-sub">${escapeHtml(item.subtitle)}</span>` : ""}
+              </div>
               <p>${escapeHtml(item.description || "")}</p>
             </div>
             <span class="home-project-status">${item.access?.mode === "passcode" ? "需口令" : "公开"}</span>
-            <a class="open-button" href="${escapeHtml(item.route)}">进入</a>
+            <a class="open-button" href="${escapeHtml(item.route)}">进入<span class="open-button-arrow" aria-hidden="true">→</span></a>
           </article>
         `).join("")}
       </section>
+      ${shortcuts.length ? `
+        <section class="home-shortcuts" aria-label="快捷入口">
+          ${shortcuts.map((item) => `
+            <a class="home-shortcut" href="${escapeHtml(item.route)}">
+              <span class="home-shortcut-mark">${escapeHtml(item.mark || "→")}</span>
+              <span class="home-shortcut-copy">
+                <strong>${escapeHtml(item.label || item.route)}</strong>
+                ${item.detail ? `<em>${escapeHtml(item.detail)}</em>` : ""}
+              </span>
+              <span class="home-project-status">${escapeHtml(item.tag || "文档站")}</span>
+              <span class="open-button">进入<span class="open-button-arrow" aria-hidden="true">→</span></span>
+            </a>
+          `).join("")}
+        </section>
+      ` : ""}
       <section class="intake-strip" aria-label="项目入库">
         ${intakeItems.map(([kind, title, detail]) => `
           <button class="intake-item intake-item--${kind}" type="button">

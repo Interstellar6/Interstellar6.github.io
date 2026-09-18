@@ -7,6 +7,12 @@ site:
   nav:
     - label: Home
       route: /home/
+  # 首页「快捷入口」：指向已挂载但不是 projects 的独立站点
+  links:
+    - label: 人工智能导论 · 如何用 AI
+      detail: 三节课的实操文档站：讲原理、装工具、做练习
+      route: /AIIntroduceCourse/
+      mark: AI
 
 projects:
   - slug: video2mesh
