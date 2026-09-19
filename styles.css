@@ -109,11 +109,16 @@ body[data-view="admin"] .rail-toggle {
 .toc-resizer { grid-column: 4; }
 .outline-rail { grid-column: 5; }
 
+/* 这几种视图没有左右栏，正文要占满整行。
+   注意必须写 "1 / -1" 而不是 "1"：在 761–1080px 时 .workspace-shell 的
+   grid-template-columns 会变成 "0 0 minmax(0,1fr) 0 0"（两侧栏宽度为 0），
+   此时只写 grid-column:1 会把正文塞进宽度为 0 的第一列 —— 正文被压成几十像素宽、
+   顶栏按钮竖着堆叠，整页看起来就是「布局乱了」。跨满整行在单列和五列网格下都正确。 */
 body[data-view="home"] .content-shell,
 body[data-view="login"] .content-shell,
 body[data-view="admin"] .content-shell,
 body.preview-mode .content-shell {
-  grid-column: 1;
+  grid-column: 1 / -1;
 }
 
 body.preview-mode .workspace-shell {
